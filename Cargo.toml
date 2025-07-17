@@ -1,0 +1,8 @@
+[package]
+name = "hyprconfig"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gtk4 = "0.10.0"
+hyprland = "0.4.0-beta.2"
