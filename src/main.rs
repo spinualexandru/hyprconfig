@@ -1,7 +1,8 @@
 use hyprland::shared::HyprData;
-mod dashboard;
+
 mod filesystem;
 mod navigation;
+mod screens;
 
 use gtk::prelude::*;
 use gtk::{glib, Application, ApplicationWindow};

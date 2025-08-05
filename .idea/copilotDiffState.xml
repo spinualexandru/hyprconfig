@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="$PROJECT_DIR$/src/dashboard.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/dashboard.rs" />
+              <option name="originalContent" value="use std::process::Command;&#10;&#10;use gtk4::gdk::Display as GdkDisplay;&#10;use gtk4::{&#10;    prelude::*, Box as GtkBox, ComboBoxText, CssProvider, Entry, Frame, Label,&#10;    Orientation, ScrolledWindow, Separator, Switch, STYLE_PROVIDER_PRIORITY_APPLICATION,&#10;};&#10;use hyprland::data::Monitors;&#10;use hyprland::shared::HyprData;&#10;&#10;pub fn appearance_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.set_margin_top(18);&#10;    box_.set_margin_bottom(18);&#10;    box_.set_margin_start(18);&#10;    box_.set_margin_end(18);&#10;    box_.append(&amp;Label::new(Some(&quot;Theme:&quot;)));&#10;    let theme_combo = ComboBoxText::new();&#10;    theme_combo.append_text(&quot;Light&quot;);&#10;    theme_combo.append_text(&quot;Dark&quot;);&#10;    theme_combo.append_text(&quot;System&quot;);&#10;    box_.append(&amp;theme_combo);&#10;    box_.append(&amp;Label::new(Some(&quot;Accent Color:&quot;)));&#10;    let accent_entry = Entry::new();&#10;    accent_entry.set_placeholder_text(Some(&quot;#RRGGBB&quot;));&#10;    box_.append(&amp;accent_entry);&#10;    box_&#10;}&#10;&#10;pub fn keyboard_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.set_margin_top(18);&#10;    box_.set_margin_bottom(18);&#10;    box_.set_margin_start(18);&#10;    box_.set_margin_end(18);&#10;    let key_repeat_box: GtkBox = GtkBox::new(Orientation::Horizontal, 12);&#10;    key_repeat_box.append(&amp;Label::new(Some(&quot;Key Repeat Rate:&quot;)));&#10;    let repeat_entry = Entry::new();&#10;    repeat_entry.set_placeholder_text(Some(&quot;e.g. 30 ms&quot;));&#10;    key_repeat_box.append(&amp;repeat_entry);&#10;    box_.append(&amp;key_repeat_box);&#10;&#10;    let switch_box: GtkBox = GtkBox::new(Orientation::Horizontal, 12);&#10;    switch_box.append(&amp;Label::new(Some(&quot;Enable Key Repeat:&quot;)));&#10;    let repeat_switch = Switch::new();&#10;    switch_box.append(&amp;repeat_switch);&#10;    box_.append(&amp;switch_box);&#10;    box_.append(&amp;repeat_entry);&#10;&#10;    box_&#10;}&#10;&#10;pub fn display_page() -&gt; GtkBox {&#10;    // Set up CSS for styling&#10;    let css = &quot;&#10;    .monitor-frame {&#10;        background: #f6f6f7;&#10;        border-radius: 12px;&#10;        padding: 18px;&#10;        margin-bottom: 18px;&#10;        box-shadow: 0 2px 8px rgba(0,0,0,0.04);&#10;    }&#10;    .monitor-title {&#10;        font-weight: bold;&#10;        font-size: 1.2em;&#10;        margin-bottom: 6px;&#10;    }&#10;    .monitor-label {&#10;        margin-bottom: 2px;&#10;    }&#10;    &quot;;&#10;    let provider = CssProvider::new();&#10;    provider.load_from_data(css);&#10;    gtk4::style_context_add_provider_for_display(&#10;        &amp;GdkDisplay::default().unwrap(),&#10;        &amp;provider,&#10;        STYLE_PROVIDER_PRIORITY_APPLICATION,&#10;    );&#10;&#10;    let outer_box = GtkBox::new(Orientation::Vertical, 0);&#10;    let scrolled = ScrolledWindow::builder()&#10;        .min_content_height(400)&#10;        .min_content_width(500)&#10;        .vexpand(true)&#10;        .hexpand(true)&#10;        .build();&#10;    let box_ = GtkBox::new(Orientation::Vertical, 18);&#10;    box_.set_margin_top(18);&#10;    box_.set_margin_bottom(18);&#10;    box_.set_margin_start(18);&#10;    box_.set_margin_end(18);&#10;    box_.append(&amp;Label::new(Some(&quot;Monitors:&quot;)));&#10;&#10;    match Monitors::get() {&#10;        Ok(monitors) =&gt; {&#10;            let mut first = true;&#10;            for monitor in monitors {&#10;                if !first {&#10;                    box_.append(&amp;Separator::new(Orientation::Horizontal));&#10;                }&#10;                first = false;&#10;                let monitor_box = GtkBox::new(Orientation::Vertical, 6);&#10;                monitor_box.set_widget_name(&quot;monitor-box&quot;);&#10;                // Monitor icon and name&#10;                let title = format!(&#10;                    &quot;️  &lt;span class='monitor-title'&gt;{}&lt;/span&gt; &lt;span size='small' foreground='#888'&gt;({}x{} @ {}Hz)&lt;/span&gt;&quot;,&#10;                    monitor.name, monitor.width, monitor.height, monitor.refresh_rate&#10;                );&#10;                let title_label = Label::new(None);&#10;                title_label.set_markup(&amp;title);&#10;                title_label.set_widget_name(&quot;monitor-title&quot;);&#10;                monitor_box.append(&amp;title_label);&#10;                // Details&#10;                let desc = Label::new(Some(&amp;format!(&quot;Description: {}&quot;, monitor.description)));&#10;                desc.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;desc);&#10;&#10;                let resolution = Label::new(Some(&amp;format!(&#10;                    &quot;{}x{}@{}Hz&quot;,&#10;                    monitor.width, monitor.height, monitor.refresh_rate&#10;                )));&#10;                resolution.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;resolution);&#10;&#10;                let pos = Label::new(Some(&amp;format!(&quot;Position: {}x{}&quot;, monitor.x, monitor.y)));&#10;                pos.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;pos);&#10;                let scale = Label::new(Some(&amp;format!(&quot;Scale: {}&quot;, monitor.scale)));&#10;                scale.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;scale);&#10;                // Frame for visual grouping&#10;                let frame = Frame::new(None);&#10;                frame.set_child(Some(&amp;monitor_box));&#10;                frame.set_widget_name(&quot;monitor-frame&quot;);&#10;                box_.append(&amp;frame);&#10;            }&#10;        }&#10;        Err(e) =&gt; {&#10;            box_.append(&amp;Label::new(Some(&amp;format!(&#10;                &quot;Failed to get monitor info: {}&quot;,&#10;                e&#10;            ))));&#10;        }&#10;    }&#10;    scrolled.set_child(Some(&amp;box_));&#10;    outer_box.append(&amp;scrolled);&#10;    outer_box&#10;}&#10;&#10;pub fn network_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.append(&amp;Label::new(Some(&quot;Wi-Fi Enabled:&quot;)));&#10;    let wifi_switch = Switch::new();&#10;    box_.append(&amp;wifi_switch);&#10;    box_.append(&amp;Label::new(Some(&quot;Current Network:&quot;)));&#10;    let network_entry = Entry::new();&#10;    network_entry.set_placeholder_text(Some(&quot;SSID&quot;));&#10;    // get network name from shell iw dev | grep ssid | awk -F 'ssid ' '{print $2}'&#10;    let get_network_name = Command::new(&quot;nmcli&quot;)&#10;        .arg(&quot;-t&quot;)&#10;        .arg(&quot;-f&quot;)&#10;        .arg(&quot;CONNECTION,STATE,DEVICE&quot;)&#10;        .arg(&quot;dev&quot;)&#10;        .output()&#10;        .unwrap();&#10;    let network_name_output = String::from_utf8(get_network_name.stdout).unwrap();&#10;    let network_name = network_name_output.split(':').nth(0).unwrap();&#10;    network_entry.set_text(network_name);&#10;    box_.append(&amp;network_entry);&#10;    box_&#10;}&#10;&#10;pub fn about_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.append(&amp;Label::new(Some(&quot;HyprConfig Settings Manager&quot;)));&#10;    box_.append(&amp;Label::new(Some(&quot;Version 1.0.0&quot;)));&#10;    box_.append(&amp;Label::new(Some(&quot;For Hyprland window manager.&quot;)));&#10;    box_&#10;}&#10;" />
+              <option name="updatedContent" value="use std::process::Command;&#10;&#10;use gtk4::gdk::Display as GdkDisplay;&#10;use gtk4::{&#10;    prelude::*, Box as GtkBox, ComboBoxText, CssProvider, Entry, Frame, Label,&#10;    Orientation, ScrolledWindow, Separator, Switch, STYLE_PROVIDER_PRIORITY_APPLICATION,&#10;};&#10;use hyprland::data::Monitors;&#10;use hyprland::shared::HyprData;&#10;&#10;// Remove all screen functions and only re-export from screens modules&#10;pub use screens::appearance::appearance::appearance_page;&#10;pub use screens::keyboard::keyboard::keyboard_page;&#10;pub use screens::display::display::display_page;&#10;pub use screens::network::network::network_page;&#10;pub use screens::about::about::about_page;&#10;&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/main.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/main.rs" />
+              <option name="originalContent" value="use hyprland::shared::HyprData;&#10;mod dashboard;&#10;mod filesystem;&#10;mod navigation;&#10;&#10;use gtk::prelude::*;&#10;use gtk::{glib, Application, ApplicationWindow};&#10;use gtk4 as gtk;&#10;&#10;fn main() -&gt; glib::ExitCode {&#10;    let app = Application::builder().application_id(&quot;hyprconfig&quot;).build();&#10;&#10;    app.connect_activate(|app| {&#10;        // We create the main window.&#10;        let window = ApplicationWindow::builder()&#10;            .application(app)&#10;            .default_width(900)&#10;            .default_height(650)&#10;            .title(&quot;HyprConfig Settings&quot;)&#10;            .build();&#10;&#10;        // Use the navigation module for the main layout&#10;        let navigation = navigation::Navigation::new();&#10;        window.set_child(Some(navigation.widget()));&#10;        window.present();&#10;    });&#10;&#10;    app.run()&#10;}&#10;" />
+              <option name="updatedContent" value="use hyprland::shared::HyprData;&#10;mod dashboard;&#10;mod filesystem;&#10;mod navigation;&#10;mod screens;&#10;&#10;use gtk::prelude::*;&#10;use gtk::{glib, Application, ApplicationWindow};&#10;use gtk4 as gtk;&#10;&#10;fn main() -&gt; glib::ExitCode {&#10;    let app = Application::builder().application_id(&quot;hyprconfig&quot;).build();&#10;&#10;    app.connect_activate(|app| {&#10;        // We create the main window.&#10;        let window = ApplicationWindow::builder()&#10;            .application(app)&#10;            .default_width(900)&#10;            .default_height(650)&#10;            .title(&quot;HyprConfig Settings&quot;)&#10;            .build();&#10;&#10;        // Use the navigation module for the main layout&#10;        let navigation = navigation::Navigation::new();&#10;        window.set_child(Some(navigation.widget()));&#10;        window.present();&#10;    });&#10;&#10;    app.run()&#10;}" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/about.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/about.rs" />
+              <option name="updatedContent" value="use gtk4::{prelude::*, Box as GtkBox, Label, Orientation};&#10;&#10;pub fn about_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.append(&amp;Label::new(Some(&quot;HyprConfig Settings Manager&quot;)));&#10;    box_.append(&amp;Label::new(Some(&quot;Version 1.0.0&quot;)));&#10;    box_.append(&amp;Label::new(Some(&quot;For Hyprland window manager.&quot;)));&#10;    box_&#10;}&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/about/mod.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/about/mod.rs" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/appearance.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/appearance.rs" />
+              <option name="updatedContent" value="use gtk4::{prelude::*, Box as GtkBox, ComboBoxText, Entry, Label, Orientation};&#10;&#10;pub fn appearance_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.set_margin_top(18);&#10;    box_.set_margin_bottom(18);&#10;    box_.set_margin_start(18);&#10;    box_.set_margin_end(18);&#10;    box_.append(&amp;Label::new(Some(&quot;Theme:&quot;)));&#10;    let theme_combo = ComboBoxText::new();&#10;    theme_combo.append_text(&quot;Light&quot;);&#10;    theme_combo.append_text(&quot;Dark&quot;);&#10;    theme_combo.append_text(&quot;System&quot;);&#10;    box_.append(&amp;theme_combo);&#10;    box_.append(&amp;Label::new(Some(&quot;Accent Color:&quot;)));&#10;    let accent_entry = Entry::new();&#10;    accent_entry.set_placeholder_text(Some(&quot;#RRGGBB&quot;));&#10;    box_.append(&amp;accent_entry);&#10;    box_&#10;}&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/appearance/mod.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/appearance/mod.rs" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/display.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/display.rs" />
+              <option name="updatedContent" value="use gtk4::gdk::Display as GdkDisplay;&#10;use gtk4::{prelude::*, Box as GtkBox, CssProvider, Frame, Label, Orientation, ScrolledWindow, Separator, STYLE_PROVIDER_PRIORITY_APPLICATION};&#10;use hyprland::data::Monitors;&#10;&#10;pub fn display_page() -&gt; GtkBox {&#10;    let css = &quot;&#10;    .monitor-frame {&#10;        background: #f6f6f7;&#10;        border-radius: 12px;&#10;        padding: 18px;&#10;        margin-bottom: 18px;&#10;        box-shadow: 0 2px 8px rgba(0,0,0,0.04);&#10;    }&#10;    .monitor-title {&#10;        font-weight: bold;&#10;        font-size: 1.2em;&#10;        margin-bottom: 6px;&#10;    }&#10;    .monitor-label {&#10;        margin-bottom: 2px;&#10;    }&#10;    &quot;;&#10;    let provider = CssProvider::new();&#10;    provider.load_from_data(css);&#10;    gtk4::style_context_add_provider_for_display(&#10;        &amp;GdkDisplay::default().unwrap(),&#10;        &amp;provider,&#10;        STYLE_PROVIDER_PRIORITY_APPLICATION,&#10;    );&#10;&#10;    let outer_box = GtkBox::new(Orientation::Vertical, 0);&#10;    let scrolled = ScrolledWindow::builder()&#10;        .min_content_height(400)&#10;        .min_content_width(500)&#10;        .vexpand(true)&#10;        .hexpand(true)&#10;        .build();&#10;    let box_ = GtkBox::new(Orientation::Vertical, 18);&#10;    box_.set_margin_top(18);&#10;    box_.set_margin_bottom(18);&#10;    box_.set_margin_start(18);&#10;    box_.set_margin_end(18);&#10;    box_.append(&amp;Label::new(Some(&quot;Monitors:&quot;)));&#10;&#10;    match Monitors::get() {&#10;        Ok(monitors) =&gt; {&#10;            let mut first = true;&#10;            for monitor in monitors {&#10;                if !first {&#10;                    box_.append(&amp;Separator::new(Orientation::Horizontal));&#10;                }&#10;                first = false;&#10;                let monitor_box = GtkBox::new(Orientation::Vertical, 6);&#10;                monitor_box.set_widget_name(&quot;monitor-box&quot;);&#10;                let title = format!(&#10;                    &quot;️  &lt;span class='monitor-title'&gt;{}&lt;/span&gt; &lt;span size='small' foreground='#888'&gt;({}x{} @ {}Hz)&lt;/span&gt;&quot;,&#10;                    monitor.name, monitor.width, monitor.height, monitor.refresh_rate&#10;                );&#10;                let title_label = Label::new(None);&#10;                title_label.set_markup(&amp;title);&#10;                title_label.set_widget_name(&quot;monitor-title&quot;);&#10;                monitor_box.append(&amp;title_label);&#10;                let desc = Label::new(Some(&amp;format!(&quot;Description: {}&quot;, monitor.description)));&#10;                desc.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;desc);&#10;                let resolution = Label::new(Some(&amp;format!(&#10;                    &quot;{}x{}@{}Hz&quot;,&#10;                    monitor.width, monitor.height, monitor.refresh_rate&#10;                )));&#10;                resolution.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;resolution);&#10;                let pos = Label::new(Some(&amp;format!(&quot;Position: {}x{}&quot;, monitor.x, monitor.y)));&#10;                pos.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;pos);&#10;                let scale = Label::new(Some(&amp;format!(&quot;Scale: {}&quot;, monitor.scale)));&#10;                scale.set_widget_name(&quot;monitor-label&quot;);&#10;                monitor_box.append(&amp;scale);&#10;                let frame = Frame::new(None);&#10;                frame.set_child(Some(&amp;monitor_box));&#10;                frame.set_widget_name(&quot;monitor-frame&quot;);&#10;                box_.append(&amp;frame);&#10;            }&#10;        }&#10;        Err(e) =&gt; {&#10;            box_.append(&amp;Label::new(Some(&amp;format!(&#10;                &quot;Failed to get monitor info: {}&quot;,&#10;                e&#10;            ))));&#10;        }&#10;    }&#10;    scrolled.set_child(Some(&amp;box_));&#10;    outer_box.append(&amp;scrolled);&#10;    outer_box&#10;}&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/display/mod.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/display/mod.rs" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/keyboard.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/keyboard.rs" />
+              <option name="updatedContent" value="use gtk4::{prelude::*, Box as GtkBox, Entry, Label, Orientation, Switch};&#10;&#10;pub fn keyboard_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.set_margin_top(18);&#10;    box_.set_margin_bottom(18);&#10;    box_.set_margin_start(18);&#10;    box_.set_margin_end(18);&#10;    let key_repeat_box: GtkBox = GtkBox::new(Orientation::Horizontal, 12);&#10;    key_repeat_box.append(&amp;Label::new(Some(&quot;Key Repeat Rate:&quot;)));&#10;    let repeat_entry = Entry::new();&#10;    repeat_entry.set_placeholder_text(Some(&quot;e.g. 30 ms&quot;));&#10;    key_repeat_box.append(&amp;repeat_entry);&#10;    box_.append(&amp;key_repeat_box);&#10;&#10;    let switch_box: GtkBox = GtkBox::new(Orientation::Horizontal, 12);&#10;    switch_box.append(&amp;Label::new(Some(&quot;Enable Key Repeat:&quot;)));&#10;    let repeat_switch = Switch::new();&#10;    switch_box.append(&amp;repeat_switch);&#10;    box_.append(&amp;switch_box);&#10;    box_.append(&amp;repeat_entry);&#10;&#10;    box_&#10;}&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/keyboard/mod.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/keyboard/mod.rs" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/mod.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/mod.rs" />
+              <option name="updatedContent" value="pub mod appearance;&#10;pub mod keyboard;&#10;pub mod display;&#10;pub mod network;&#10;pub mod about;&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/network.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/network.rs" />
+              <option name="updatedContent" value="use gtk4::{prelude::*, Box as GtkBox, Entry, Label, Switch};&#10;use std::process::Command;&#10;&#10;pub fn network_page() -&gt; GtkBox {&#10;    let box_ = GtkBox::new(Orientation::Vertical, 12);&#10;    box_.append(&amp;Label::new(Some(&quot;Wi-Fi Enabled:&quot;)));&#10;    let wifi_switch = Switch::new();&#10;    box_.append(&amp;wifi_switch);&#10;    box_.append(&amp;Label::new(Some(&quot;Current Network:&quot;)));&#10;    let network_entry = Entry::new();&#10;    network_entry.set_placeholder_text(Some(&quot;SSID&quot;));&#10;    let get_network_name = Command::new(&quot;nmcli&quot;)&#10;        .arg(&quot;-t&quot;)&#10;        .arg(&quot;-f&quot;)&#10;        .arg(&quot;CONNECTION,STATE,DEVICE&quot;)&#10;        .arg(&quot;dev&quot;)&#10;        .output()&#10;        .unwrap();&#10;    let network_name_output = String::from_utf8(get_network_name.stdout).unwrap();&#10;    let network_name = network_name_output.split(':').nth(0).unwrap();&#10;    network_entry.set_text(network_name);&#10;    box_.append(&amp;network_entry);&#10;    box_&#10;}&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+        <entry key="$PROJECT_DIR$/src/screens/network/mod.rs">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/src/screens/network/mod.rs" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
