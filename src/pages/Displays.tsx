@@ -4,6 +4,19 @@ import { Monitor } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DisplayCardSkeleton } from "@/components/displays/DisplaySkeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+interface DisplayMode {
+  width: number;
+  height: number;
+  refresh_rate: number;
+}
 
 interface MonitorInfo {
   id: number;
@@ -18,6 +31,14 @@ interface MonitorInfo {
   transform: string;
   active_workspace_id: number;
   active_workspace_name: string;
+  available_modes: DisplayMode[];
+}
+
+interface MonitorSettings {
+  [monitorId: number]: {
+    resolution: string; // "widthxheight"
+    refreshRate: string; // "rate"
+  };
 }
 
 export default function Displays() {
@@ -26,6 +47,8 @@ export default function Displays() {
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [monitorSettings, setMonitorSettings] = useState<MonitorSettings>({});
+  const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
     loadMonitors();
@@ -39,6 +62,17 @@ export default function Displays() {
       .then((result) => {
         setMonitors(result);
         setCachedMonitors(result); // Cache for next time
+
+        // Initialize monitor settings with current values
+        const initialSettings: MonitorSettings = {};
+        result.forEach((monitor) => {
+          initialSettings[monitor.id] = {
+            resolution: `${monitor.width}x${monitor.height}`,
+            refreshRate: monitor.refresh_rate.toFixed(2),
+          };
+        });
+        setMonitorSettings(initialSettings);
+        setHasChanges(false);
       })
       .catch((err) => {
         setError(err as string);
@@ -53,11 +87,66 @@ export default function Displays() {
       });
   };
 
+  const handleResolutionChange = (monitorId: number, resolution: string) => {
+    // Find the monitor to get available refresh rates for the new resolution
+    const monitor = displayMonitors.find((m) => m.id === monitorId);
+    if (monitor) {
+      const availableRatesForResolution = monitor.available_modes
+        .filter((mode) => `${mode.width}x${mode.height}` === resolution)
+        .map((mode) => mode.refresh_rate.toFixed(2));
+
+      // Check if current refresh rate is available for new resolution
+      const currentRefreshRate = monitorSettings[monitorId]?.refreshRate;
+      const newRefreshRate = availableRatesForResolution.includes(currentRefreshRate)
+        ? currentRefreshRate
+        : availableRatesForResolution[0] || currentRefreshRate;
+
+      setMonitorSettings((prev) => ({
+        ...prev,
+        [monitorId]: {
+          resolution,
+          refreshRate: newRefreshRate,
+        },
+      }));
+    }
+    setHasChanges(true);
+  };
+
+  const handleRefreshRateChange = (monitorId: number, refreshRate: string) => {
+    setMonitorSettings((prev) => ({
+      ...prev,
+      [monitorId]: {
+        ...prev[monitorId],
+        refreshRate,
+      },
+    }));
+    setHasChanges(true);
+  };
+
+  const handleApply = () => {
+    // TODO: Apply the changes (implement later)
+    console.log("Applying changes:", monitorSettings);
+    setHasChanges(false);
+  };
+
+  const handleCancel = () => {
+    // Reset to current monitor values
+    const resetSettings: MonitorSettings = {};
+    displayMonitors.forEach((monitor) => {
+      resetSettings[monitor.id] = {
+        resolution: `${monitor.width}x${monitor.height}`,
+        refreshRate: monitor.refresh_rate.toFixed(2),
+      };
+    });
+    setMonitorSettings(resetSettings);
+    setHasChanges(false);
+  };
+
   // Use cached monitors if loading and cache exists, otherwise use current monitors
   const displayMonitors = loading && cachedMonitors.length > 0 ? cachedMonitors : monitors;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={`p-6 space-y-6 ${hasChanges ? 'pb-24' : ''}`}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Displays</h1>
@@ -111,16 +200,58 @@ export default function Displays() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <p className="text-muted-foreground">Resolution</p>
-                    <p className="font-medium">
-                      {monitor.width} × {monitor.height}
-                    </p>
+                    <Select
+                      value={monitorSettings[monitor.id]?.resolution || `${monitor.width}x${monitor.height}`}
+                      onValueChange={(value) => handleResolutionChange(monitor.id, value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Get unique resolutions from available modes */}
+                        {Array.from(
+                          new Set(
+                            monitor.available_modes.map(
+                              (mode) => `${mode.width}x${mode.height}`
+                            )
+                          )
+                        ).map((resolution) => (
+                          <SelectItem key={resolution} value={resolution}>
+                            {resolution.replace("x", " × ")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <p className="text-muted-foreground">Refresh Rate</p>
-                    <p className="font-medium">{monitor.refresh_rate.toFixed(2)} Hz</p>
+                    <Select
+                      value={monitorSettings[monitor.id]?.refreshRate || monitor.refresh_rate.toFixed(2)}
+                      onValueChange={(value) => handleRefreshRateChange(monitor.id, value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Get refresh rates for the selected resolution */}
+                        {monitor.available_modes
+                          .filter((mode) => {
+                            const selectedResolution = monitorSettings[monitor.id]?.resolution || `${monitor.width}x${monitor.height}`;
+                            return `${mode.width}x${mode.height}` === selectedResolution;
+                          })
+                          .map((mode) => {
+                            const rate = mode.refresh_rate.toFixed(2);
+                            return (
+                              <SelectItem key={rate} value={rate}>
+                                {rate} Hz
+                              </SelectItem>
+                            );
+                          })}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-1">
@@ -150,6 +281,25 @@ export default function Displays() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* Apply/Cancel floating bar - show when changes are made */}
+      {hasChanges && !loading && displayMonitors.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="container flex h-16 items-center justify-between px-6">
+            <p className="text-sm text-muted-foreground">
+              You have unsaved changes to your display settings.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button onClick={handleApply}>
+                Apply Changes
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

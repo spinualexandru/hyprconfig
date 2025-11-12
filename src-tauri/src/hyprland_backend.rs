@@ -6,6 +6,13 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DisplayMode {
+    pub width: u16,
+    pub height: u16,
+    pub refresh_rate: f32,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MonitorInfo {
     pub id: i128,
@@ -20,6 +27,7 @@ pub struct MonitorInfo {
     pub transform: String,
     pub active_workspace_id: i32,
     pub active_workspace_name: String,
+    pub available_modes: Vec<DisplayMode>,
 }
 
 #[tauri::command]
@@ -31,21 +39,32 @@ pub fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
 
     match result {
         Ok(Ok(monitors)) => {
+            // Get available modes for all monitors using hyprctl
+            let available_modes_map = get_available_modes_for_all_monitors();
+
             let monitor_infos: Vec<MonitorInfo> = monitors
                 .into_iter()
-                .map(|m| MonitorInfo {
-                    id: m.id,
-                    name: m.name,
-                    description: m.description,
-                    width: m.width,
-                    height: m.height,
-                    refresh_rate: m.refresh_rate,
-                    x: m.x,
-                    y: m.y,
-                    scale: m.scale,
-                    transform: format!("{:?}", m.transform),
-                    active_workspace_id: m.active_workspace.id,
-                    active_workspace_name: m.active_workspace.name,
+                .map(|m| {
+                    let available_modes = available_modes_map
+                        .get(&m.name)
+                        .cloned()
+                        .unwrap_or_else(Vec::new);
+
+                    MonitorInfo {
+                        id: m.id,
+                        name: m.name,
+                        description: m.description,
+                        width: m.width,
+                        height: m.height,
+                        refresh_rate: m.refresh_rate,
+                        x: m.x,
+                        y: m.y,
+                        scale: m.scale,
+                        transform: format!("{:?}", m.transform),
+                        active_workspace_id: m.active_workspace.id,
+                        active_workspace_name: m.active_workspace.name,
+                        available_modes,
+                    }
                 })
                 .collect();
             Ok(monitor_infos)
@@ -53,6 +72,69 @@ pub fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
         Ok(Err(e)) => Err(format!("Failed to get monitor info: {}. Make sure Hyprland is running.", e)),
         Err(_) => Err("Failed to get monitor info: Internal panic occurred. Make sure Hyprland is running and accessible.".to_string()),
     }
+}
+
+fn get_available_modes_for_all_monitors() -> std::collections::HashMap<String, Vec<DisplayMode>> {
+    let mut modes_map = std::collections::HashMap::new();
+
+    // Run hyprctl monitors all to get available modes
+    let output = Command::new("hyprctl")
+        .args(&["monitors", "all"])
+        .output();
+
+    if let Ok(output) = output {
+        if output.status.success() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let mut current_monitor: Option<String> = None;
+
+            for line in output_str.lines() {
+                let line = line.trim();
+
+                // Detect monitor name (e.g., "Monitor eDP-1 (ID 0):")
+                if line.starts_with("Monitor ") && line.contains("(ID") {
+                    if let Some(name) = line.split_whitespace().nth(1) {
+                        current_monitor = Some(name.to_string());
+                    }
+                }
+
+                // Parse availableModes line
+                if line.starts_with("availableModes:") {
+                    if let Some(monitor_name) = &current_monitor {
+                        let modes_str = line.strip_prefix("availableModes:").unwrap_or("").trim();
+                        let modes = parse_available_modes(modes_str);
+                        modes_map.insert(monitor_name.clone(), modes);
+                    }
+                }
+            }
+        }
+    }
+
+    modes_map
+}
+
+fn parse_available_modes(modes_str: &str) -> Vec<DisplayMode> {
+    let mut modes = Vec::new();
+
+    // Parse modes like "2560x1600@240.00Hz 2560x1600@60.00Hz"
+    for mode_str in modes_str.split_whitespace() {
+        if let Some((resolution, refresh)) = mode_str.split_once('@') {
+            if let Some((width_str, height_str)) = resolution.split_once('x') {
+                if let (Ok(width), Ok(height)) = (width_str.parse::<u16>(), height_str.parse::<u16>()) {
+                    // Parse refresh rate (remove "Hz" suffix)
+                    let refresh_str = refresh.trim_end_matches("Hz");
+                    if let Ok(refresh_rate) = refresh_str.parse::<f32>() {
+                        modes.push(DisplayMode {
+                            width,
+                            height,
+                            refresh_rate,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    modes
 }
 
 #[derive(Debug, Serialize, Deserialize)]
