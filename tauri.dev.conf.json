@@ -1,0 +1,6 @@
+{
+  "build": {
+    "beforeDevCommand": "npm --prefix ui run dev",
+    "devUrl": "http://localhost:3000"
+  }
+}

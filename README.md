@@ -37,24 +37,39 @@ npm install
 cd ..
 ```
 
+Build the frontend:
+```bash
+cd ui && npm run build && cd ..
+```
+
 Then build the application:
 ```bash
 cargo build --release
 ```
 
-This will automatically build the frontend with Vite before building Tauri.
-
 ## Running
 
-For development (with hot reload):
-```bash
-cargo tauri dev
-```
-
-Or simply:
+### Quick Start (Production Mode)
 ```bash
 cargo run
 ```
+
+This runs the app with the pre-built static frontend. Make sure to build the frontend first (see Building section).
+
+### Development Mode (with Hot Reload)
+For development with Vite hot reload:
+
+1. Start the Vite dev server in one terminal:
+```bash
+cd ui && npm run dev
+```
+
+2. In another terminal, run Tauri with the dev config:
+```bash
+cargo tauri dev --config tauri.dev.conf.json
+```
+
+This will connect to the dev server and give you hot reload for frontend changes.
 
 ## Development
 
