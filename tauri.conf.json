@@ -4,8 +4,6 @@
   "identifier": "com.hyprconfig.app",
   "build": {
     "frontendDist": "../ui/dist",
-    "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "",
     "beforeBuildCommand": ""
   },
   "app": {
