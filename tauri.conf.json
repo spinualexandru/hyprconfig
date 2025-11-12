@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "identifier": "com.hyprconfig.app",
   "build": {
-    "frontendDist": "../ui/dist",
+    "frontendDist": "ui/dist",
     "beforeBuildCommand": ""
   },
   "app": {
