@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyprConfig Settings</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>HyprConfig</h2>
+            </div>
+            <ul class="nav-items">
+                <li class="nav-item" data-page="appearance">
+                    <span class="icon">🎨</span>
+                    <span>Appearance</span>
+                </li>
+                <li class="nav-item" data-page="keyboard">
+                    <span class="icon">⌨️</span>
+                    <span>Keyboard</span>
+                </li>
+                <li class="nav-item active" data-page="display">
+                    <span class="icon">🖥️</span>
+                    <span>Display</span>
+                </li>
+                <li class="nav-item" data-page="network">
+                    <span class="icon">🌐</span>
+                    <span>Network</span>
+                </li>
+                <li class="nav-item" data-page="plugins">
+                    <span class="icon">🔌</span>
+                    <span>Plugins</span>
+                </li>
+                <li class="nav-item" data-page="about">
+                    <span class="icon">ℹ️</span>
+                    <span>About</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="content">
+            <div id="appearance-page" class="page" style="display: none;">
+                <h1>Appearance</h1>
+                <p>Configure the appearance settings for Hyprland.</p>
+            </div>
+
+            <div id="keyboard-page" class="page" style="display: none;">
+                <h1>Keyboard</h1>
+                <p>Configure keyboard settings and keybinds for Hyprland.</p>
+            </div>
+
+            <div id="display-page" class="page" style="display: block;">
+                <h1>Display</h1>
+                <div id="monitors-container">
+                    <p>Loading monitors...</p>
+                </div>
+            </div>
+
+            <div id="network-page" class="page" style="display: none;">
+                <h1>Network</h1>
+                <p>Configure network settings.</p>
+            </div>
+
+            <div id="plugins-page" class="page" style="display: none;">
+                <h1>Plugins</h1>
+                <p>Manage Hyprland plugins.</p>
+            </div>
+
+            <div id="about-page" class="page" style="display: none;">
+                <h1>About</h1>
+                <div class="about-content">
+                    <h2>HyprConfig</h2>
+                    <p>Version 0.1.0</p>
+                    <p>A modern GUI configuration tool for Hyprland.</p>
+                    <p>Built with Tauri and Rust.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
