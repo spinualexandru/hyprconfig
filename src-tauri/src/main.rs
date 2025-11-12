@@ -6,6 +6,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             hyprland_backend::get_monitors,
             hyprland_backend::get_network_info,
+            hyprland_backend::scan_wifi_networks,
+            hyprland_backend::get_system_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

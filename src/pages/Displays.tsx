@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DisplayCardSkeleton } from "@/components/displays/DisplaySkeleton";
 
 interface MonitorInfo {
   id: number;
@@ -21,7 +22,9 @@ interface MonitorInfo {
 
 export default function Displays() {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [cachedMonitors, setCachedMonitors] = useState<MonitorInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,47 +32,29 @@ export default function Displays() {
   }, []);
 
   const loadMonitors = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await invoke<MonitorInfo[]>("get_monitors");
-      setMonitors(result);
-    } catch (err) {
-      setError(err as string);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    setError(null);
+
+    invoke<MonitorInfo[]>("get_monitors")
+      .then((result) => {
+        setMonitors(result);
+        setCachedMonitors(result); // Cache for next time
+      })
+      .catch((err) => {
+        setError(err as string);
+        // Keep showing cached data if available
+        if (cachedMonitors.length === 0) {
+          setMonitors([]);
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        setInitialLoad(false);
+      });
   };
 
-  if (loading) {
-    return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Displays</h1>
-          <p className="text-muted-foreground mt-2">Loading monitor information...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Displays</h1>
-          <p className="text-muted-foreground mt-2">Configure your display settings</p>
-        </div>
-        <Card className="border-destructive">
-          <CardHeader>
-            <CardTitle className="text-destructive">Error Loading Monitors</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{error}</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Use cached monitors if loading and cache exists, otherwise use current monitors
+  const displayMonitors = loading && cachedMonitors.length > 0 ? cachedMonitors : monitors;
 
   return (
     <div className="p-6 space-y-6">
@@ -80,12 +65,30 @@ export default function Displays() {
             Configure your display settings
           </p>
         </div>
-        <Button onClick={loadMonitors} variant="outline">
+        <Button onClick={loadMonitors} variant="outline" disabled={loading}>
           Refresh
         </Button>
       </div>
 
-      {monitors.length === 0 ? (
+      {/* Error Display */}
+      {error && cachedMonitors.length === 0 && (
+        <Card className="border-destructive">
+          <CardHeader>
+            <CardTitle className="text-destructive">Error Loading Monitors</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Monitors Display */}
+      {(loading && cachedMonitors.length === 0) || initialLoad ? (
+        <div className="grid gap-4">
+          <DisplayCardSkeleton />
+          <DisplayCardSkeleton />
+        </div>
+      ) : displayMonitors.length === 0 ? (
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">No monitors detected.</p>
@@ -93,7 +96,7 @@ export default function Displays() {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {monitors.map((monitor) => (
+          {displayMonitors.map((monitor) => (
             <Card key={monitor.id}>
               <CardHeader>
                 <div className="flex items-center gap-3">
