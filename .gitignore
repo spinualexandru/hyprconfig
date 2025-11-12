@@ -24,3 +24,8 @@ target
 # Added by cargo
 
 /target
+
+# Node / NPM
+node_modules
+ui/dist
+package-lock.json

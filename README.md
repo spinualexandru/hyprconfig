@@ -5,7 +5,8 @@ Configure Hyprland using a modern GUI built with Tauri.
 ## Technology Stack
 
 - **Backend**: Rust with Tauri 2.1
-- **Frontend**: HTML5, CSS3, JavaScript
+- **Frontend**: React 19 with Vite 7
+- **UI Components**: Radix UI (accessible, unstyled components)
 - **Hyprland Integration**: `hyprland` crate for native Hyprland IPC
 
 ## System Requirements
@@ -23,16 +24,34 @@ sudo apt-get install -y \
     patchelf
 ```
 
+You'll also need Node.js 18+ and npm to build the frontend.
+
 For other distributions, see [Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ## Building
 
+First, install frontend dependencies:
+```bash
+cd ui
+npm install
+cd ..
+```
+
+Then build the application:
 ```bash
 cargo build --release
 ```
 
+This will automatically build the frontend with Vite before building Tauri.
+
 ## Running
 
+For development (with hot reload):
+```bash
+cargo tauri dev
+```
+
+Or simply:
 ```bash
 cargo run
 ```
@@ -41,8 +60,15 @@ cargo run
 
 The project structure:
 - `src/` - Rust backend with Tauri commands
-- `ui/dist/` - Frontend HTML/CSS/JS
+- `ui/src/` - React frontend source code
+- `ui/dist/` - Built frontend assets (generated)
 - `tauri.conf.json` - Tauri configuration
+
+### Frontend Development
+The frontend uses:
+- **React** for UI components
+- **Radix UI** for accessible, unstyled primitives (Tabs, ScrollArea, etc.)
+- **Vite** for fast development and optimized builds
 
 # Roadmap
 

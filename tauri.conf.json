@@ -4,7 +4,9 @@
   "identifier": "com.hyprconfig.app",
   "build": {
     "frontendDist": "ui/dist",
-    "beforeBuildCommand": ""
+    "beforeDevCommand": "cd ui && npm run dev",
+    "beforeBuildCommand": "cd ui && npm run build",
+    "devUrl": "http://localhost:3000"
   },
   "app": {
     "windows": [
