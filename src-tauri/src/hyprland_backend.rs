@@ -1,6 +1,7 @@
 use hyprland::data::Monitors;
 use hyprland::shared::HyprData;
 use serde::{Deserialize, Serialize};
+use std::panic;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MonitorInfo {
@@ -20,8 +21,13 @@ pub struct MonitorInfo {
 
 #[tauri::command]
 pub fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
-    match Monitors::get() {
-        Ok(monitors) => {
+    // Wrap in catch_unwind to prevent panics from crossing FFI boundary
+    let result = panic::catch_unwind(|| {
+        Monitors::get()
+    });
+
+    match result {
+        Ok(Ok(monitors)) => {
             let monitor_infos: Vec<MonitorInfo> = monitors
                 .into_iter()
                 .map(|m| MonitorInfo {
@@ -41,6 +47,7 @@ pub fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
                 .collect();
             Ok(monitor_infos)
         }
-        Err(e) => Err(format!("Failed to get monitor info: {}", e)),
+        Ok(Err(e)) => Err(format!("Failed to get monitor info: {}. Make sure Hyprland is running.", e)),
+        Err(_) => Err("Failed to get monitor info: Internal panic occurred. Make sure Hyprland is running and accessible.".to_string()),
     }
 }
