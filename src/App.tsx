@@ -1,9 +1,11 @@
 import { useState } from "react";
-import Sidebar from "./components/Sidebar";
-import General from "./pages/General";
-import Network from "./pages/Network";
-import Displays from "./pages/Displays";
-import About from "./pages/About";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
+import General from "@/pages/General";
+import Network from "@/pages/Network";
+import Displays from "@/pages/Displays";
+import About from "@/pages/About";
 
 function App() {
   const [currentPage, setCurrentPage] = useState("general");
@@ -24,12 +26,18 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-950">
-      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-      <main className="flex-1 overflow-y-auto">
-        {renderPage()}
-      </main>
-    </div>
+    <SidebarProvider defaultOpen={true}>
+      <AppSidebar currentPage={currentPage} onNavigate={setCurrentPage} />
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+        </header>
+        <main className="flex-1 overflow-y-auto">
+          {renderPage()}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

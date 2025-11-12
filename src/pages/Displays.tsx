@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 interface MonitorInfo {
   id: number;
@@ -41,98 +43,112 @@ export default function Displays() {
 
   if (loading) {
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-semibold mb-6">Displays</h1>
-        <p className="text-gray-600 dark:text-gray-400">Loading monitor information...</p>
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Displays</h1>
+          <p className="text-muted-foreground mt-2">Loading monitor information...</p>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-semibold mb-6">Displays</h1>
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <p className="text-red-800 dark:text-red-200">Error loading monitors: {error}</p>
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Displays</h1>
+          <p className="text-muted-foreground mt-2">Configure your display settings</p>
         </div>
+        <Card className="border-destructive">
+          <CardHeader>
+            <CardTitle className="text-destructive">Error Loading Monitors</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-semibold mb-6">Displays</h1>
-
-      <div className="space-y-4">
-        {monitors.length === 0 ? (
-          <p className="text-gray-600 dark:text-gray-400">No monitors detected.</p>
-        ) : (
-          monitors.map((monitor) => (
-            <div
-              key={monitor.id}
-              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm"
-            >
-              <div className="flex items-start gap-4">
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <Monitor className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                </div>
-
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold mb-1">{monitor.name}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    {monitor.description}
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Resolution:</span>
-                      <span className="ml-2 font-medium">
-                        {monitor.width} × {monitor.height}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Refresh Rate:</span>
-                      <span className="ml-2 font-medium">{monitor.refresh_rate.toFixed(2)} Hz</span>
-                    </div>
-
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Position:</span>
-                      <span className="ml-2 font-medium">
-                        ({monitor.x}, {monitor.y})
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Scale:</span>
-                      <span className="ml-2 font-medium">{monitor.scale}×</span>
-                    </div>
-
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Transform:</span>
-                      <span className="ml-2 font-medium">{monitor.transform}</span>
-                    </div>
-
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Workspace:</span>
-                      <span className="ml-2 font-medium">
-                        {monitor.active_workspace_name} (#{monitor.active_workspace_id})
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Displays</h1>
+          <p className="text-muted-foreground mt-2">
+            Configure your display settings
+          </p>
+        </div>
+        <Button onClick={loadMonitors} variant="outline">
+          Refresh
+        </Button>
       </div>
 
-      <button
-        onClick={loadMonitors}
-        className="mt-6 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-      >
-        Refresh
-      </button>
+      {monitors.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">No monitors detected.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {monitors.map((monitor) => (
+            <Card key={monitor.id}>
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                    <Monitor className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle>{monitor.name}</CardTitle>
+                    <CardDescription>{monitor.description}</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Resolution</p>
+                    <p className="font-medium">
+                      {monitor.width} × {monitor.height}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Refresh Rate</p>
+                    <p className="font-medium">{monitor.refresh_rate.toFixed(2)} Hz</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Position</p>
+                    <p className="font-medium">
+                      ({monitor.x}, {monitor.y})
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Scale</p>
+                    <p className="font-medium">{monitor.scale}×</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Transform</p>
+                    <p className="font-medium">{monitor.transform}</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Workspace</p>
+                    <p className="font-medium">
+                      {monitor.active_workspace_name} (#{monitor.active_workspace_id})
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
