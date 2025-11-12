@@ -8,6 +8,8 @@ fn main() {
             hyprland_backend::get_network_info,
             hyprland_backend::scan_wifi_networks,
             hyprland_backend::get_system_info,
+            hyprland_backend::get_keybinds,
+            hyprland_backend::get_variables,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -5,6 +5,7 @@ use std::panic;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use hyprlang::Config;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DisplayMode {
@@ -675,4 +676,144 @@ fn get_cpu_info() -> String {
     }
 
     "Unknown".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Keybind {
+    pub modifiers: Vec<String>,
+    pub key: String,
+    pub dispatcher: String,
+    pub params: String,
+}
+fn register_hyprland_handlers(config: &mut Config) {
+    // Register root-level Hyprland keywords as handlers
+    let root_keywords = vec![
+        "monitor",
+        "env",
+        "bind",
+        "bindm",
+        "bindel",
+        "bindl",
+        "bindr",
+        "windowrule",
+        "windowrulev2",
+        "workspace",
+        "exec",
+        "exec-once",
+        "permission",
+        "blurls",
+        "layerrule",
+        "gesture",
+        "source",
+    ];
+
+    for keyword in root_keywords {
+        config.register_handler_fn(keyword, |_ctx| Ok(()));
+    }
+
+    // Register category-specific handlers for animations
+    config.register_category_handler_fn("animations", "animation", |_ctx| Ok(()));
+    config.register_category_handler_fn("animations", "bezier", |_ctx| Ok(()));
+}
+#[tauri::command]
+pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Get all bind handler calls
+    let binds = config.all_handler_calls().get("bind")
+        .cloned()
+        .unwrap_or_else(Vec::new);
+
+    println!("binds: {:?}", binds);
+
+
+    let mut keybinds = Vec::new();
+
+    for bind_str in binds {
+        // Parse bind format: "MODS, KEY, dispatcher, params"
+        // Example: "SUPER, Q, exec, kitty"
+        let parts: Vec<&str> = bind_str.split(',').map(|s| s.trim()).collect();
+
+        if parts.len() >= 3 {
+            let mods_str = parts[0];
+            let key = parts[1].to_string();
+            let dispatcher = parts[2].to_string();
+            let params = if parts.len() > 3 {
+                parts[3..].join(", ")
+            } else {
+                String::new()
+            };
+
+            // Split modifiers by space or underscore
+            let modifiers: Vec<String> = mods_str
+                .split(|c: char| c.is_whitespace() || c == '_')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+
+            keybinds.push(Keybind {
+                modifiers,
+                key,
+                dispatcher,
+                params,
+            });
+        }
+    }
+
+    Ok(keybinds)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Variable {
+    pub name: String,
+    pub value: String,
+}
+
+#[tauri::command]
+pub fn get_variables() -> Result<Vec<Variable>, String> {
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Get all variables
+    let variables_map = config.variables();
+    let mut variables = Vec::new();
+
+    for (name, value) in variables_map {
+        variables.push(Variable {
+            name: name.clone(),
+            value: value.clone(),
+        });
+    }
+
+    // Sort by name for consistent display
+    variables.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Ok(variables)
 }

@@ -1,27 +1,20 @@
-import * as React from "react"
-import {
-  Settings,
-  Wifi,
-  Monitor,
-  Info,
-  Sun,
-  Moon,
-} from "lucide-react"
-
+import { DollarSign, Info, Keyboard, Monitor, Moon, Settings, Sun, Wifi } from "lucide-react";
+import type * as React from "react";
+import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
   SidebarContent,
-  SidebarHeader,
   SidebarFooter,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
-  SidebarMenuSubItem,
   SidebarMenuSubButton,
-} from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
-import { useTheme } from "@/hooks/use-theme"
+  SidebarMenuSubItem,
+} from "@/components/ui/sidebar";
+import { useTheme } from "@/hooks/use-theme";
+import HyprlandIcon from "./icons/hyprland";
 
 const navItems = [
   {
@@ -40,28 +33,45 @@ const navItems = [
     icon: Monitor,
   },
   {
+    title: "Keybinds",
+    id: "keybinds",
+    icon: Keyboard,
+  },
+  {
+    title: "Variables",
+    id: "variables",
+    icon: DollarSign,
+  },
+  {
     title: "About",
     id: "about",
     icon: Info,
   },
-]
+];
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
-  currentPage: string
-  onNavigate: (page: string) => void
+  currentPage: string;
+  onNavigate: (page: string) => void;
 }
 
-export function AppSidebar({ currentPage, onNavigate, ...props }: AppSidebarProps) {
-  const { theme, toggleTheme } = useTheme()
+export function AppSidebar({
+  currentPage,
+  onNavigate,
+  ...props
+}: AppSidebarProps) {
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+            <SidebarMenuButton
+              size="lg"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <Monitor className="size-4" />
+                <HyprlandIcon className="size-4 fill-accent" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">Hyprconfig</span>
@@ -74,8 +84,8 @@ export function AppSidebar({ currentPage, onNavigate, ...props }: AppSidebarProp
       <SidebarContent>
         <SidebarMenu className="px-2">
           {navItems.map((item) => {
-            const Icon = item.icon
-            const isActive = currentPage === item.id
+            const Icon = item.icon;
+            const isActive = currentPage === item.id;
 
             return (
               <SidebarMenuItem key={item.id}>
@@ -89,7 +99,7 @@ export function AppSidebar({ currentPage, onNavigate, ...props }: AppSidebarProp
                   <span>{item.title}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            )
+            );
           })}
         </SidebarMenu>
       </SidebarContent>
@@ -99,7 +109,11 @@ export function AppSidebar({ currentPage, onNavigate, ...props }: AppSidebarProp
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={toggleTheme}
-              tooltip={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              tooltip={
+                theme === "light"
+                  ? "Switch to dark mode"
+                  : "Switch to light mode"
+              }
               className="px-2 justify-start"
             >
               {theme === "light" ? (
@@ -113,5 +127,5 @@ export function AppSidebar({ currentPage, onNavigate, ...props }: AppSidebarProp
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-  )
+  );
 }
