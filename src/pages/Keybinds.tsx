@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Keyboard, RefreshCw } from "lucide-react";
+import { Keyboard, RefreshCw, Plus, Trash2, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +26,17 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Keybind } from "@/types/keybinds";
 import type { Variable } from "@/types/variables";
 
@@ -91,6 +102,18 @@ const getDispatcherDescription = (dispatcher: string): string => {
 
 	return descriptions[dispatcher.toLowerCase()] || "Custom dispatcher command";
 };
+
+// All available dispatchers (extracted from getDispatcherDescription)
+const AVAILABLE_DISPATCHERS = [
+	"exec", "killactive", "togglefloating", "fullscreen", "workspace", "movetoworkspace",
+	"movetoworkspacesilent", "togglegroup", "changegroupactive", "togglesplit", "swapsplit",
+	"splitratio", "movefocus", "movewindow", "resizeactive", "centerwindow", "cyclenext",
+	"swapnext", "focusmonitor", "movecursortocorner", "movecursor", "exit", "forcerendererreload",
+	"movecurrentworkspacetomonitor", "focusworkspaceoncurrentmonitor", "focusurgentorlast",
+	"togglespecialworkspace", "movetoworkspace", "pin", "mouse", "bringactivetotop", "alterzorder",
+	"lockgroups", "lockactivegroup", "moveintogroup", "moveoutofgroup", "movegroupwindow",
+	"global", "pass", "sendshortcut", "dpms", "pseudo", "layoutmsg", "toggleopaque", "submap"
+];
 
 // Helper function to parse command and extract variables
 const parseCommandVariables = (command: string): { text: string; isVariable: boolean }[] => {
@@ -216,6 +239,17 @@ export default function Keybinds() {
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
+	// Keybind Form Dialog State
+	const [showDialog, setShowDialog] = useState(false);
+	const [editingIndex, setEditingIndex] = useState<number | null>(null);
+	const [formModifiers, setFormModifiers] = useState<string[]>([]);
+	const [formKey, setFormKey] = useState("");
+	const [formDispatcher, setFormDispatcher] = useState("");
+	const [formParams, setFormParams] = useState("");
+	const [formError, setFormError] = useState<string | null>(null);
+	const [formLoading, setFormLoading] = useState(false);
+	const [dispatcherSuggestions, setDispatcherSuggestions] = useState<string[]>([]);
+
 	useEffect(() => {
 		loadKeybinds();
 		loadVariables();
@@ -254,6 +288,109 @@ export default function Keybinds() {
 			});
 	};
 
+	const resetForm = () => {
+		setFormModifiers([]);
+		setFormKey("");
+		setFormDispatcher("");
+		setFormParams("");
+		setFormError(null);
+		setEditingIndex(null);
+	};
+
+	const handleOpenAddDialog = () => {
+		resetForm();
+		setShowDialog(true);
+	};
+
+	const handleOpenEditDialog = (keybind: Keybind, index: number) => {
+		setFormModifiers(keybind.modifiers);
+		setFormKey(keybind.key);
+		setFormDispatcher(keybind.dispatcher);
+		setFormParams(keybind.params);
+		setEditingIndex(index);
+		setFormError(null);
+		setShowDialog(true);
+	};
+
+	const handleCloseDialog = () => {
+		setShowDialog(false);
+		resetForm();
+	};
+
+	const toggleModifier = (modifier: string) => {
+		if (formModifiers.includes(modifier)) {
+			setFormModifiers(formModifiers.filter((m) => m !== modifier));
+		} else {
+			setFormModifiers([...formModifiers, modifier]);
+		}
+	};
+
+	const handleDispatcherChange = (value: string) => {
+		setFormDispatcher(value);
+		// Update suggestions based on input
+		if (value.trim()) {
+			const filtered = AVAILABLE_DISPATCHERS.filter((d) =>
+				d.toLowerCase().includes(value.toLowerCase())
+			).slice(0, 8);
+			setDispatcherSuggestions(filtered);
+		} else {
+			setDispatcherSuggestions([]);
+		}
+	};
+
+	const handleSubmit = async () => {
+		// Validation
+		if (!formKey.trim()) {
+			setFormError("Key is required");
+			return;
+		}
+		if (!formDispatcher.trim()) {
+			setFormError("Dispatcher is required");
+			return;
+		}
+
+		setFormLoading(true);
+		setFormError(null);
+
+		const command = editingIndex !== null ? "edit_keybind" : "add_keybind";
+		const args = editingIndex !== null
+			? {
+					index: editingIndex,
+					modifiers: formModifiers,
+					key: formKey.trim(),
+					dispatcher: formDispatcher.trim(),
+					params: formParams.trim(),
+			  }
+			: {
+					modifiers: formModifiers,
+					key: formKey.trim(),
+					dispatcher: formDispatcher.trim(),
+					params: formParams.trim(),
+			  };
+
+		invoke(command, args)
+			.then(() => {
+				handleCloseDialog();
+				loadKeybinds();
+			})
+			.catch((err) => {
+				setFormError(err as string);
+			})
+			.finally(() => {
+				setFormLoading(false);
+			});
+	};
+
+	const handleDeleteKeybind = async (index: number) => {
+		invoke("delete_keybind", { index })
+			.then(() => {
+				loadKeybinds();
+			})
+			.catch((err) => {
+				setError(err as string);
+			});
+	};
+
 	// Use cached keybinds if loading and cache exists, otherwise use current keybinds
 	const displayKeybinds =
 		loading && cachedKeybinds.length > 0 ? cachedKeybinds : keybinds;
@@ -267,10 +404,16 @@ export default function Keybinds() {
 						View and change your Hyprland keyboard shortcuts and keybindings
 					</p>
 				</div>
-				<Button onClick={loadKeybinds} variant="outline" disabled={loading}>
-					<RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-					Refresh
-				</Button>
+				<div className="flex gap-2">
+					<Button onClick={handleOpenAddDialog} variant="default">
+						<Plus className="h-4 w-4 mr-2" />
+						Add Keybind
+					</Button>
+					<Button onClick={loadKeybinds} variant="outline" disabled={loading}>
+						<RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+						Refresh
+					</Button>
+				</div>
 			</div>
 
 			{/* Error Display */}
@@ -323,6 +466,7 @@ export default function Keybinds() {
 											<TableHead className="w-[150px]">Key</TableHead>
 											<TableHead className="w-[150px]">Action</TableHead>
 											<TableHead>Command</TableHead>
+											<TableHead className="w-[100px]">Actions</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
@@ -367,6 +511,24 @@ export default function Keybinds() {
 														variables={variables}
 													/>
 												</TableCell>
+												<TableCell>
+													<div className="flex gap-1">
+														<Button
+															size="icon"
+															variant="ghost"
+															onClick={() => handleOpenEditDialog(keybind, index)}
+														>
+															<Pencil className="h-4 w-4" />
+														</Button>
+														<Button
+															size="icon"
+															variant="ghost"
+															onClick={() => handleDeleteKeybind(index)}
+														>
+															<Trash2 className="h-4 w-4 text-destructive" />
+														</Button>
+													</div>
+												</TableCell>
 											</TableRow>
 										))}
 									</TableBody>
@@ -376,6 +538,124 @@ export default function Keybinds() {
 					</CardContent>
 				</Card>
 			)}
+
+			{/* Add/Edit Keybind Dialog */}
+			<Dialog open={showDialog} onOpenChange={setShowDialog}>
+				<DialogContent className="max-w-2xl">
+					<DialogHeader>
+						<DialogTitle>
+							{editingIndex !== null ? "Edit Keybind" : "Add New Keybind"}
+						</DialogTitle>
+						<DialogDescription>
+							{editingIndex !== null
+								? "Modify the keybind settings below."
+								: "Create a new keyboard shortcut for Hyprland."}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4 py-4">
+						{/* Modifiers */}
+						<div className="space-y-2">
+							<Label>Modifiers (optional)</Label>
+							<div className="flex gap-4">
+								{["SUPER", "SHIFT", "ALT", "CTRL"].map((mod) => (
+									<div key={mod} className="flex items-center space-x-2">
+										<Checkbox
+											id={`mod-${mod}`}
+											checked={formModifiers.includes(mod)}
+											onCheckedChange={() => toggleModifier(mod)}
+											disabled={formLoading}
+										/>
+										<Label
+											htmlFor={`mod-${mod}`}
+											className="text-sm font-normal cursor-pointer"
+										>
+											{mod}
+										</Label>
+									</div>
+								))}
+							</div>
+						</div>
+
+						{/* Key */}
+						<div className="space-y-2">
+							<Label htmlFor="key">Key *</Label>
+							<Input
+								id="key"
+								placeholder="e.g., Q, Return, 1, left, F1"
+								value={formKey}
+								onChange={(e) => {
+									setFormKey(e.target.value);
+									setFormError(null);
+								}}
+								disabled={formLoading}
+							/>
+							<p className="text-xs text-muted-foreground">
+								Examples: Q, Return, Escape, left, right, up, down, F1-F12, 1-9
+							</p>
+						</div>
+
+						{/* Dispatcher */}
+						<div className="space-y-2">
+							<Label htmlFor="dispatcher">Dispatcher (Action) *</Label>
+							<Input
+								id="dispatcher"
+								placeholder="e.g., exec, killactive, workspace"
+								value={formDispatcher}
+								onChange={(e) => handleDispatcherChange(e.target.value)}
+								disabled={formLoading}
+								list="dispatcher-suggestions"
+							/>
+							<datalist id="dispatcher-suggestions">
+								{dispatcherSuggestions.map((d) => (
+									<option key={d} value={d}>
+										{getDispatcherDescription(d)}
+									</option>
+								))}
+							</datalist>
+							<p className="text-xs text-muted-foreground">
+								Common: exec, killactive, workspace, togglefloating, fullscreen
+							</p>
+						</div>
+
+						{/* Parameters */}
+						<div className="space-y-2">
+							<Label htmlFor="params">Parameters (optional)</Label>
+							<Input
+								id="params"
+								placeholder="e.g., kitty, 1, l"
+								value={formParams}
+								onChange={(e) => setFormParams(e.target.value)}
+								disabled={formLoading}
+							/>
+							<p className="text-xs text-muted-foreground">
+								Command arguments. Can use variables like $terminal
+							</p>
+						</div>
+
+						{formError && (
+							<p className="text-sm text-destructive">{formError}</p>
+						)}
+					</div>
+					<DialogFooter>
+						<Button
+							variant="outline"
+							onClick={handleCloseDialog}
+							disabled={formLoading}
+						>
+							Cancel
+						</Button>
+						<Button onClick={handleSubmit} disabled={formLoading}>
+							{formLoading
+								? editingIndex !== null
+									? "Saving..."
+									: "Adding..."
+								: editingIndex !== null
+								? "Save Changes"
+								: "Add Keybind"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

@@ -910,3 +910,149 @@ pub fn delete_variable(name: String) -> Result<(), String> {
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn add_keybind(
+    modifiers: Vec<String>,
+    key: String,
+    dispatcher: String,
+    params: String,
+) -> Result<(), String> {
+    // Validate inputs
+    if key.trim().is_empty() {
+        return Err("Key is required".to_string());
+    }
+
+    if dispatcher.trim().is_empty() {
+        return Err("Dispatcher is required".to_string());
+    }
+
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Format bind args: "MODS, KEY, dispatcher, params"
+    let mods_str = if modifiers.is_empty() {
+        String::new()
+    } else {
+        modifiers.join(" ")
+    };
+
+    let bind_args = if mods_str.is_empty() {
+        format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
+    } else {
+        format!("{}, {}, {}, {}", mods_str, key.trim(), dispatcher.trim(), params.trim())
+    };
+
+    // Add handler call (mutation API)
+    config.add_handler_call("bind", bind_args)
+        .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
+
+    // Save the config file
+    config.save_as(&config_path)
+        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn edit_keybind(
+    index: usize,
+    modifiers: Vec<String>,
+    key: String,
+    dispatcher: String,
+    params: String,
+) -> Result<(), String> {
+    // Validate inputs
+    if key.trim().is_empty() {
+        return Err("Key is required".to_string());
+    }
+
+    if dispatcher.trim().is_empty() {
+        return Err("Dispatcher is required".to_string());
+    }
+
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Remove old keybind at index
+    config.remove_handler_call("bind", index)
+        .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
+
+    // Format new bind args
+    let mods_str = if modifiers.is_empty() {
+        String::new()
+    } else {
+        modifiers.join(" ")
+    };
+
+    let bind_args = if mods_str.is_empty() {
+        format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
+    } else {
+        format!("{}, {}, {}, {}", mods_str, key.trim(), dispatcher.trim(), params.trim())
+    };
+
+    // Add new keybind (mutation API)
+    config.add_handler_call("bind", bind_args)
+        .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
+
+    // Save the config file
+    config.save_as(&config_path)
+        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_keybind(index: usize) -> Result<(), String> {
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Remove handler call at index (mutation API)
+    config.remove_handler_call("bind", index)
+        .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
+
+    // Save the config file
+    config.save_as(&config_path)
+        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+
+    Ok(())
+}

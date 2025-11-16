@@ -13,6 +13,9 @@ fn main() {
             hyprland_backend::set_variable,
             hyprland_backend::add_variable,
             hyprland_backend::delete_variable,
+            hyprland_backend::add_keybind,
+            hyprland_backend::edit_keybind,
+            hyprland_backend::delete_keybind,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
