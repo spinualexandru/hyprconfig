@@ -817,3 +817,96 @@ pub fn get_variables() -> Result<Vec<Variable>, String> {
 
     Ok(variables)
 }
+
+#[tauri::command]
+pub fn set_variable(name: String, value: String) -> Result<(), String> {
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Set the variable (mutation API)
+    config.set_variable(name.clone(), value.clone());
+
+    // Save the config file
+    config.save_as(&config_path)
+        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn add_variable(name: String, value: String) -> Result<(), String> {
+    // Validate variable name (alphanumeric + underscore only)
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err("Variable name must contain only letters, numbers, and underscores".to_string());
+    }
+
+    if name.is_empty() {
+        return Err("Variable name cannot be empty".to_string());
+    }
+
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Add the variable (same as set_variable in hyprlang)
+    config.set_variable(name.clone(), value.clone());
+
+    // Save the config file
+    config.save_as(&config_path)
+        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_variable(name: String) -> Result<(), String> {
+    // Get Hyprland config path
+    let home_dir = std::env::var("HOME")
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+
+    if !config_path.exists() {
+        return Err(format!("Hyprland config file not found at {:?}", config_path));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Remove the variable (mutation API)
+    config.remove_variable(&name);
+
+    // Save the config file
+    config.save_as(&config_path)
+        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+
+    Ok(())
+}

@@ -10,6 +10,9 @@ fn main() {
             hyprland_backend::get_system_info,
             hyprland_backend::get_keybinds,
             hyprland_backend::get_variables,
+            hyprland_backend::set_variable,
+            hyprland_backend::add_variable,
+            hyprland_backend::delete_variable,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
