@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SystemInfoSkeleton } from "@/components/about/SystemInfoSkeleton";
+import { InfoField } from "@/components/about/InfoField";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -109,84 +110,29 @@ export default function About() {
 						if (displayInfo) {
 							return (
 								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-									<div>
-										<p className="text-sm font-medium">OS</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.os}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">Hostname</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.hostname}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">Kernel</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.kernel}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">Uptime</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.uptime}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">Shell</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.shell}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">Hyprland Version</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.hyprland_version}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">CPU</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.cpu}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">RAM</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.ram_used} / {displayInfo.ram_total}
-										</p>
-									</div>
-
-									<div>
-										<p className="text-sm font-medium">Disk Space (Root)</p>
-										<p className="text-sm text-muted-foreground">
-											{displayInfo.disk_used} / {displayInfo.disk_total}
-										</p>
-									</div>
-
-									<div className="md:col-span-2">
-										<p className="text-sm font-medium">
-											GPU{displayInfo.gpus.length > 1 ? "s" : ""}
-										</p>
-										<div className="space-y-1">
-											{displayInfo.gpus.map((gpu, index) => (
-												<p
-													key={index}
-													className="text-sm text-muted-foreground"
-												>
-													{gpu}
-												</p>
-											))}
-										</div>
-									</div>
+									<InfoField label="OS" value={displayInfo.os} />
+									<InfoField label="Hostname" value={displayInfo.hostname} />
+									<InfoField label="Kernel" value={displayInfo.kernel} />
+									<InfoField label="Uptime" value={displayInfo.uptime} />
+									<InfoField label="Shell" value={displayInfo.shell} />
+									<InfoField
+										label="Hyprland Version"
+										value={displayInfo.hyprland_version}
+									/>
+									<InfoField label="CPU" value={displayInfo.cpu} />
+									<InfoField
+										label="RAM"
+										value={`${displayInfo.ram_used} / ${displayInfo.ram_total}`}
+									/>
+									<InfoField
+										label="Disk Space (Root)"
+										value={`${displayInfo.disk_used} / ${displayInfo.disk_total}`}
+									/>
+									<InfoField
+										label={`GPU${displayInfo.gpus.length > 1 ? "s" : ""}`}
+										value={displayInfo.gpus}
+										className="md:col-span-2"
+									/>
 								</div>
 							);
 						}
