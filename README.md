@@ -2,12 +2,7 @@
 
 Configure hyprland using a GUI.
 
-# Roadmap
-
-## General
-
-- [x] Setup basic GUI
-- [x] Add navigation menu
+# Roadmap/Features
 
 ## Appearance
 
@@ -15,6 +10,19 @@ Configure hyprland using a GUI.
 - [ ] Animations
 - [ ] Blur
 - [ ] Shadows
+
+## System
+- [ ] Startup Appplications
+- [ ] Startup Services
+- [ ] System level environment variables
+- [ ] Userspace environment variables
+- [ ] Hyprland level environment variables
+- [ ] User details
+- [ ] User groups details
+- [ ] Group creation
+- [ ] Add user to groups
+- [ ] Remove user from groups
+- [ ] Change Password
 
 ## Keybinds
 
@@ -113,3 +121,12 @@ Configure hyprland using a GUI.
 - [x] Display uptime
 - [x] Display uptime version ( and commit if available )
 - [x] Display shell
+
+## Misc
+- [ ] Export/Backup config
+- [ ] Rice bundler
+    - [ ] Detect common tools
+    - [ ] Detect hyprpaper
+    - [ ] Detect executed shell scripts
+- [ ] Display deprecated config keys/values
+- [ ] Locate config if not found
