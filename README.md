@@ -130,3 +130,4 @@ Configure hyprland using a GUI.
     - [ ] Detect executed shell scripts
 - [ ] Display deprecated config keys/values
 - [ ] Locate config if not found
+- [ ] Internationalization
