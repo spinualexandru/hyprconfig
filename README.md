@@ -15,7 +15,6 @@ Configure hyprland using a GUI.
 - [ ] Animations
 - [ ] Blur
 - [ ] Shadows
-- [ ] 
 
 ## Keybinds
 
