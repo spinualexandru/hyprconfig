@@ -116,7 +116,7 @@ export default function Network() {
 		<div className="p-6 space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-3xl font-bold tracking-tight">Network</h1>
+					<h1 className="text-3xl font-bold tracking-tight text-foreground">Network</h1>
 					<p className="text-muted-foreground mt-2">
 						Network settings and configuration
 					</p>
@@ -147,7 +147,7 @@ export default function Network() {
 			{/* Network Interfaces Section */}
 			{(loadingInterfaces || interfaces.length > 0 || initialLoad) && (
 				<div className="space-y-4">
-					<h2 className="text-xl font-semibold">Network Interfaces</h2>
+					<h2 className="text-xl font-semibold text-foreground">Network Interfaces</h2>
 					<div className="grid gap-4">
 						{(loadingInterfaces && interfaces.length === 0) || initialLoad ? (
 							<>
@@ -172,7 +172,7 @@ export default function Network() {
 				connectedWifi.length > 0 ||
 				initialLoad) && (
 				<div className="space-y-4">
-					<h2 className="text-xl font-semibold">Connected</h2>
+					<h2 className="text-xl font-semibold text-foreground">Connected</h2>
 					<div className="grid gap-4">
 						{(loadingWifi && cachedWifiNetworks.length === 0) || initialLoad ? (
 							<WifiCardSkeleton />
@@ -191,7 +191,7 @@ export default function Network() {
 				initialLoad) && (
 				<div className="space-y-4">
 					<div className="flex items-center justify-between">
-						<h2 className="text-xl font-semibold">Available Networks</h2>
+						<h2 className="text-xl font-semibold text-foreground">Available Networks</h2>
 						<Button
 							variant="ghost"
 							size="icon"

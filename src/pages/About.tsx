@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SystemInfoSkeleton } from "@/components/about/SystemInfoSkeleton";
 import { InfoField } from "@/components/about/InfoField";
+import { DiskSpaceField } from "@/components/about/DiskSpaceField";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -65,7 +66,7 @@ export default function About() {
 	return (
 		<div className="p-6 space-y-6">
 			<div>
-				<h1 className="text-3xl font-bold tracking-tight">Hyprconfig</h1>
+				<h1 className="text-3xl font-bold tracking-tight text-foreground">Hyprconfig</h1>
 				<p className="text-muted-foreground mt-2">Version 0.1.0</p>
 				<p className="text-muted-foreground mt-2">
 					Hyprconfig is not an official Hyprland project and is not affiliated
@@ -115,22 +116,25 @@ export default function About() {
 									<InfoField label="Kernel" value={displayInfo.kernel} />
 									<InfoField label="Uptime" value={displayInfo.uptime} />
 									<InfoField label="Shell" value={displayInfo.shell} />
-									<InfoField
-										label="Hyprland Version"
-										value={displayInfo.hyprland_version}
-									/>
 									<InfoField label="CPU" value={displayInfo.cpu} />
-									<InfoField
+									<DiskSpaceField
 										label="RAM"
-										value={`${displayInfo.ram_used} / ${displayInfo.ram_total}`}
+										used={displayInfo.ram_used}
+										total={displayInfo.ram_total}
 									/>
-									<InfoField
+									<DiskSpaceField
 										label="Disk Space (Root)"
-										value={`${displayInfo.disk_used} / ${displayInfo.disk_total}`}
+										used={displayInfo.disk_used}
+										total={displayInfo.disk_total}
 									/>
 									<InfoField
 										label={`GPU${displayInfo.gpus.length > 1 ? "s" : ""}`}
 										value={displayInfo.gpus}
+										className="md:col-span-2"
+									/>
+									<InfoField
+										label="Hyprland Version"
+										value={displayInfo.hyprland_version}
 										className="md:col-span-2"
 									/>
 								</div>
@@ -147,11 +151,11 @@ export default function About() {
 				</CardHeader>
 				<CardContent>
 					<div>
-						<p className="text-sm font-medium">Version</p>
+						<p className="text-sm font-medium text-foreground">Version</p>
 						<p className="text-sm text-muted-foreground">0.1.0</p>
 					</div>
 					<div>
-						<p className="text-sm font-medium">License</p>
+						<p className="text-sm font-medium text-foreground">License</p>
 						<p className="text-sm text-muted-foreground">MIT License</p>
 					</div>
 				</CardContent>

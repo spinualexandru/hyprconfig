@@ -1,11 +1,11 @@
 use hyprland::data::Monitors;
 use hyprland::shared::HyprData;
+use hyprlang::Config;
 use serde::{Deserialize, Serialize};
-use std::panic;
 use std::fs;
+use std::panic;
 use std::path::Path;
 use std::process::Command;
-use hyprlang::Config;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DisplayMode {
@@ -34,9 +34,7 @@ pub struct MonitorInfo {
 #[tauri::command]
 pub fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
     // Wrap in catch_unwind to prevent panics from crossing FFI boundary
-    let result = panic::catch_unwind(|| {
-        Monitors::get()
-    });
+    let result = panic::catch_unwind(|| Monitors::get());
 
     match result {
         Ok(Ok(monitors)) => {
@@ -79,9 +77,7 @@ fn get_available_modes_for_all_monitors() -> std::collections::HashMap<String, V
     let mut modes_map = std::collections::HashMap::new();
 
     // Run hyprctl monitors all to get available modes
-    let output = Command::new("hyprctl")
-        .args(&["monitors", "all"])
-        .output();
+    let output = Command::new("hyprctl").args(&["monitors", "all"]).output();
 
     if let Ok(output) = output {
         if output.status.success() {
@@ -120,7 +116,9 @@ fn parse_available_modes(modes_str: &str) -> Vec<DisplayMode> {
     for mode_str in modes_str.split_whitespace() {
         if let Some((resolution, refresh)) = mode_str.split_once('@') {
             if let Some((width_str, height_str)) = resolution.split_once('x') {
-                if let (Ok(width), Ok(height)) = (width_str.parse::<u16>(), height_str.parse::<u16>()) {
+                if let (Ok(width), Ok(height)) =
+                    (width_str.parse::<u16>(), height_str.parse::<u16>())
+                {
                     // Parse refresh rate (remove "Hz" suffix)
                     let refresh_str = refresh.trim_end_matches("Hz");
                     if let Ok(refresh_rate) = refresh_str.parse::<f32>() {
@@ -169,8 +167,8 @@ pub fn get_network_info() -> Result<Vec<NetworkInterface>, String> {
         return Err("Network information not available on this system".to_string());
     }
 
-    let entries = fs::read_dir(net_path)
-        .map_err(|e| format!("Failed to read network interfaces: {}", e))?;
+    let entries =
+        fs::read_dir(net_path).map_err(|e| format!("Failed to read network interfaces: {}", e))?;
 
     let mut interfaces = Vec::new();
 
@@ -252,13 +250,11 @@ pub fn get_network_info() -> Result<Vec<NetworkInterface>, String> {
     }
 
     // Sort interfaces: connected first, then by name
-    interfaces.sort_by(|a, b| {
-        match (a.state.as_str(), b.state.as_str()) {
-            ("up", "up") | ("down", "down") => a.name.cmp(&b.name),
-            ("up", _) => std::cmp::Ordering::Less,
-            (_, "up") => std::cmp::Ordering::Greater,
-            _ => a.name.cmp(&b.name),
-        }
+    interfaces.sort_by(|a, b| match (a.state.as_str(), b.state.as_str()) {
+        ("up", "up") | ("down", "down") => a.name.cmp(&b.name),
+        ("up", _) => std::cmp::Ordering::Less,
+        (_, "up") => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
     });
 
     Ok(interfaces)
@@ -366,12 +362,26 @@ pub async fn scan_wifi_networks() -> Result<Vec<WifiNetwork>, String> {
 
     // Get list of available networks
     let output = Command::new("nmcli")
-        .args(&["-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY,BSSID,FREQ", "device", "wifi", "list"])
+        .args(&[
+            "-t",
+            "-f",
+            "IN-USE,SSID,SIGNAL,SECURITY,BSSID,FREQ",
+            "device",
+            "wifi",
+            "list",
+        ])
         .output()
-        .map_err(|e| format!("Failed to scan WiFi networks: {}. Make sure NetworkManager is installed.", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to scan WiFi networks: {}. Make sure NetworkManager is installed.",
+                e
+            )
+        })?;
 
     if !output.status.success() {
-        return Err("Failed to scan WiFi networks. Make sure NetworkManager is running.".to_string());
+        return Err(
+            "Failed to scan WiFi networks. Make sure NetworkManager is running.".to_string(),
+        );
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
@@ -424,12 +434,10 @@ pub async fn scan_wifi_networks() -> Result<Vec<WifiNetwork>, String> {
     }
 
     // Sort networks: connected first, then by signal strength
-    networks.sort_by(|a, b| {
-        match (a.connected, b.connected) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => b.signal_strength.cmp(&a.signal_strength),
-        }
+    networks.sort_by(|a, b| match (a.connected, b.connected) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => b.signal_strength.cmp(&a.signal_strength),
     });
 
     Ok(networks)
@@ -530,9 +538,7 @@ fn get_shell_info() -> String {
         .unwrap_or("sh");
 
     // Try to get shell version
-    let version_output = Command::new(&shell_path)
-        .arg("--version")
-        .output();
+    let version_output = Command::new(&shell_path).arg("--version").output();
 
     if let Ok(output) = version_output {
         if output.status.success() {
@@ -558,8 +564,7 @@ fn get_hyprland_version() -> String {
 }
 
 fn get_gpu_info() -> Vec<String> {
-    let output = Command::new("lspci")
-        .output();
+    let output = Command::new("lspci").output();
 
     if let Ok(output) = output {
         if output.status.success() {
@@ -627,9 +632,7 @@ fn get_ram_total() -> String {
 }
 
 fn get_disk_used() -> String {
-    let output = Command::new("df")
-        .args(&["-h", "/"])
-        .output();
+    let output = Command::new("df").args(&["-h", "/"]).output();
 
     if let Ok(output) = output {
         if output.status.success() {
@@ -646,9 +649,7 @@ fn get_disk_used() -> String {
 }
 
 fn get_disk_total() -> String {
-    let output = Command::new("df")
-        .args(&["-h", "/"])
-        .output();
+    let output = Command::new("df").args(&["-h", "/"]).output();
 
     if let Ok(output) = output {
         if output.status.success() {
@@ -718,28 +719,33 @@ fn register_hyprland_handlers(config: &mut Config) {
 #[tauri::command]
 pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Get all bind handler calls
-    let binds = config.all_handler_calls().get("bind")
+    let binds = config
+        .all_handler_calls()
+        .get("bind")
         .cloned()
         .unwrap_or_else(Vec::new);
 
     println!("binds: {:?}", binds);
-
 
     let mut keybinds = Vec::new();
 
@@ -786,19 +792,23 @@ pub struct Variable {
 #[tauri::command]
 pub fn get_variables() -> Result<Vec<Variable>, String> {
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Get all variables
@@ -821,26 +831,31 @@ pub fn get_variables() -> Result<Vec<Variable>, String> {
 #[tauri::command]
 pub fn set_variable(name: String, value: String) -> Result<(), String> {
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Set the variable (mutation API)
     config.set_variable(name.clone(), value.clone());
 
     // Save the config file
-    config.save_as(&config_path)
+    config
+        .save_as(&config_path)
         .map_err(|e| format!("Failed to save config file: {:?}", e))?;
 
     Ok(())
@@ -850,7 +865,9 @@ pub fn set_variable(name: String, value: String) -> Result<(), String> {
 pub fn add_variable(name: String, value: String) -> Result<(), String> {
     // Validate variable name (alphanumeric + underscore only)
     if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return Err("Variable name must contain only letters, numbers, and underscores".to_string());
+        return Err(
+            "Variable name must contain only letters, numbers, and underscores".to_string(),
+        );
     }
 
     if name.is_empty() {
@@ -858,26 +875,31 @@ pub fn add_variable(name: String, value: String) -> Result<(), String> {
     }
 
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Add the variable (same as set_variable in hyprlang)
     config.set_variable(name.clone(), value.clone());
 
     // Save the config file
-    config.save_as(&config_path)
+    config
+        .save_as(&config_path)
         .map_err(|e| format!("Failed to save config file: {:?}", e))?;
 
     Ok(())
@@ -886,26 +908,31 @@ pub fn add_variable(name: String, value: String) -> Result<(), String> {
 #[tauri::command]
 pub fn delete_variable(name: String) -> Result<(), String> {
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Remove the variable (mutation API)
     config.remove_variable(&name);
 
     // Save the config file
-    config.save_as(&config_path)
+    config
+        .save_as(&config_path)
         .map_err(|e| format!("Failed to save config file: {:?}", e))?;
 
     Ok(())
@@ -928,19 +955,23 @@ pub fn add_keybind(
     }
 
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Format bind args: "MODS, KEY, dispatcher, params"
@@ -953,15 +984,23 @@ pub fn add_keybind(
     let bind_args = if mods_str.is_empty() {
         format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
     } else {
-        format!("{}, {}, {}, {}", mods_str, key.trim(), dispatcher.trim(), params.trim())
+        format!(
+            "{}, {}, {}, {}",
+            mods_str,
+            key.trim(),
+            dispatcher.trim(),
+            params.trim()
+        )
     };
 
     // Add handler call (mutation API)
-    config.add_handler_call("bind", bind_args)
+    config
+        .add_handler_call("bind", bind_args)
         .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
 
     // Save the config file
-    config.save_as(&config_path)
+    config
+        .save_as(&config_path)
         .map_err(|e| format!("Failed to save config file: {:?}", e))?;
 
     Ok(())
@@ -985,23 +1024,28 @@ pub fn edit_keybind(
     }
 
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Remove old keybind at index
-    config.remove_handler_call("bind", index)
+    config
+        .remove_handler_call("bind", index)
         .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
 
     // Format new bind args
@@ -1014,15 +1058,23 @@ pub fn edit_keybind(
     let bind_args = if mods_str.is_empty() {
         format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
     } else {
-        format!("{}, {}, {}, {}", mods_str, key.trim(), dispatcher.trim(), params.trim())
+        format!(
+            "{}, {}, {}, {}",
+            mods_str,
+            key.trim(),
+            dispatcher.trim(),
+            params.trim()
+        )
     };
 
     // Add new keybind (mutation API)
-    config.add_handler_call("bind", bind_args)
+    config
+        .add_handler_call("bind", bind_args)
         .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
 
     // Save the config file
-    config.save_as(&config_path)
+    config
+        .save_as(&config_path)
         .map_err(|e| format!("Failed to save config file: {:?}", e))?;
 
     Ok(())
@@ -1031,27 +1083,33 @@ pub fn edit_keybind(
 #[tauri::command]
 pub fn delete_keybind(index: usize) -> Result<(), String> {
     // Get Hyprland config path
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
 
     if !config_path.exists() {
-        return Err(format!("Hyprland config file not found at {:?}", config_path));
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
     }
 
     // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprland_handlers(&mut config);
-    config.parse_file(&config_path)
+    config
+        .parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Remove handler call at index (mutation API)
-    config.remove_handler_call("bind", index)
+    config
+        .remove_handler_call("bind", index)
         .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
 
     // Save the config file
-    config.save_as(&config_path)
+    config
+        .save_as(&config_path)
         .map_err(|e| format!("Failed to save config file: {:?}", e))?;
 
     Ok(())

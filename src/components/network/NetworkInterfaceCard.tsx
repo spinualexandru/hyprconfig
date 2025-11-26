@@ -44,7 +44,7 @@ export function NetworkInterfaceCard({
 							{getInterfaceIcon(iface.interface_type)}
 						</div>
 						<div className="flex-1">
-							<div className="font-semibold">
+							<div className="font-semibold text-foreground">
 								{iface.ssid
 									? `${iface.ssid} (${iface.interface_type})`
 									: iface.interface_type}

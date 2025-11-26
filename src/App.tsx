@@ -7,6 +7,7 @@ import {
 	SidebarTrigger,
 } from "@/components/ui/sidebar";
 import About from "@/pages/About";
+import Appearance from "@/pages/Appearance";
 import Displays from "@/pages/Displays";
 import General from "@/pages/General";
 import Keybinds from "@/pages/Keybinds";
@@ -20,6 +21,8 @@ function App() {
 		switch (currentPage) {
 			case "general":
 				return <General />;
+			case "appearance":
+				return <Appearance />;
 			case "network":
 				return <Network />;
 			case "displays":

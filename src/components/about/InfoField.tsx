@@ -9,7 +9,7 @@ export function InfoField({ label, value, className = "" }: InfoFieldProps) {
 
 	return (
 		<div className={className}>
-			<p className="text-sm font-medium">{label}</p>
+			<p className="text-sm font-medium text-foreground">{label}</p>
 			{isArray ? (
 				<div className="space-y-1">
 					{value.map((item, index) => (

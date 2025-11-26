@@ -43,7 +43,7 @@ export function WifiNetworkCard({ network }: WifiNetworkCardProps) {
 							<Wifi className="h-5 w-5 text-primary" />
 						</div>
 						<div className="flex-1">
-							<div className="font-semibold">{network.ssid}</div>
+							<div className="font-semibold text-foreground">{network.ssid}</div>
 							<div className="text-sm text-muted-foreground">
 								{network.security} • {network.frequency}
 							</div>

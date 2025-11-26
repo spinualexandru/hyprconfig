@@ -158,7 +158,7 @@ export default function Displays() {
 		<div className={`p-6 space-y-6 ${hasChanges ? "pb-24" : ""}`}>
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-3xl font-bold tracking-tight">Displays</h1>
+					<h1 className="text-3xl font-bold tracking-tight text-foreground">Displays</h1>
 					<p className="text-muted-foreground mt-2">
 						Configure your display settings
 					</p>

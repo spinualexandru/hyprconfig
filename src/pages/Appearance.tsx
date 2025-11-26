@@ -1,0 +1,258 @@
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { Image as ImageIcon, RefreshCw, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface Wallpaper {
+	monitor: string;
+	path: string;
+}
+
+interface HyprpaperConfig {
+	preloads: string[];
+	wallpapers: Wallpaper[];
+}
+
+export default function Appearance() {
+	const [config, setConfig] = useState<HyprpaperConfig | null>(null);
+	const [loading, setLoading] = useState(false);
+	const [initialLoad, setInitialLoad] = useState(true);
+	const [error, setError] = useState<string | null>(null);
+	const [updating, setUpdating] = useState(false);
+	const [matugenExists, setMatugenExists] = useState(false);
+	const [syncMatugen, setSyncMatugen] = useState(false);
+
+	const loadConfig = async () => {
+		setLoading(true);
+		setError(null);
+
+		try {
+			const hyprpaperConfig = await invoke<HyprpaperConfig>(
+				"get_hyprpaper_config",
+			);
+			setConfig(hyprpaperConfig);
+		} catch (err) {
+			setError(err as string);
+			setConfig(null);
+		} finally {
+			setLoading(false);
+			setInitialLoad(false);
+		}
+	};
+
+	useEffect(() => {
+		loadConfig();
+	}, []);
+
+	useEffect(() => {
+		const checkMatugen = async () => {
+			try {
+				const exists = await invoke<boolean>("tool_exists", { name: "matugen" });
+				setMatugenExists(exists);
+			} catch {
+				setMatugenExists(false);
+			}
+		};
+		checkMatugen();
+	}, []);
+
+	const handleChangeWallpaper = async () => {
+		try {
+			const selected = await open({
+				multiple: false,
+				directory: false,
+				filters: [
+					{
+						name: "Images",
+						extensions: ["jpg", "jpeg", "png", "gif", "webp", "bmp"],
+					},
+				],
+			});
+
+			if (selected) {
+				setUpdating(true);
+
+				// Replace all existing wallpapers with the new one
+				await invoke("replace_wallpaper", { monitor: "", path: selected });
+
+				// Run matugen if enabled
+				if (syncMatugen) {
+					try {
+						await invoke("run_matugen", { imagePath: selected });
+						toast.success("Wallpaper updated and Matugen synced");
+					} catch (matugenErr) {
+						toast.warning(`Wallpaper updated but Matugen failed: ${matugenErr}`);
+					}
+				} else {
+					toast.success("Wallpaper updated successfully");
+				}
+
+				await loadConfig();
+			}
+		} catch (err) {
+			toast.error(`Failed to update wallpaper: ${err}`);
+		} finally {
+			setUpdating(false);
+		}
+	};
+
+	const getCurrentWallpaper = () => {
+		if (!config || config.wallpapers.length === 0) return null;
+		// Get the last wallpaper (most recent)
+		return config.wallpapers[config.wallpapers.length - 1];
+	};
+
+	const currentWallpaper = getCurrentWallpaper();
+
+	return (
+		<div className="p-6 space-y-6">
+			<div>
+				<h1 className="text-3xl font-bold tracking-tight text-foreground">Appearance</h1>
+				<p className="text-muted-foreground mt-2">
+					Customize your wallpaper and appearance settings
+				</p>
+			</div>
+
+			<Card>
+				<CardHeader className="flex flex-row items-center justify-between">
+					<div>
+						<CardTitle>Wallpaper</CardTitle>
+						<CardDescription>
+							Current wallpaper from hyprpaper configuration
+						</CardDescription>
+					</div>
+					<div className="flex gap-2 items-center">
+						{matugenExists && (
+							<div className="flex items-center gap-2 mr-2">
+								<Checkbox
+									id="sync-matugen"
+									checked={syncMatugen}
+									onCheckedChange={(checked) => setSyncMatugen(checked === true)}
+								/>
+								<label
+									htmlFor="sync-matugen"
+									className="text-sm font-medium cursor-pointer"
+								>
+									Sync Matugen
+								</label>
+							</div>
+						)}
+						<Button
+							variant="outline"
+							size="icon"
+							onClick={loadConfig}
+							disabled={loading}
+						>
+							<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+						</Button>
+						<Button
+							onClick={handleChangeWallpaper}
+							disabled={updating || loading}
+						>
+							<Upload className="h-4 w-4 mr-2" />
+							Change Wallpaper
+						</Button>
+					</div>
+				</CardHeader>
+				<CardContent>
+					{error && (
+						<div className="text-sm text-destructive mb-4">
+							Failed to load wallpaper configuration: {error}
+						</div>
+					)}
+
+					{initialLoad && loading ? (
+						<div className="space-y-4">
+							<Skeleton className="w-full h-[400px] rounded-lg" />
+							<Skeleton className="w-1/2 h-4" />
+						</div>
+					) : currentWallpaper ? (
+						<div className="space-y-4">
+							<div className="relative w-full h-[400px] rounded-lg overflow-hidden bg-muted">
+								<img
+									src={convertFileSrc(currentWallpaper.path)}
+									alt="Current wallpaper"
+									className="w-full h-full object-cover"
+									onError={(e) => {
+										// Fallback if image fails to load
+										e.currentTarget.style.display = "none";
+										e.currentTarget.parentElement?.classList.add(
+											"flex",
+											"items-center",
+											"justify-center",
+										);
+										const fallback = document.createElement("div");
+										fallback.className =
+											"flex flex-col items-center justify-center gap-2 text-muted-foreground";
+										fallback.innerHTML = `
+											<svg class="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+											</svg>
+											<span>Failed to load image</span>
+										`;
+										e.currentTarget.parentElement?.appendChild(fallback);
+									}}
+								/>
+							</div>
+							<div className="space-y-2">
+								<div>
+									<p className="text-sm font-medium text-foreground">Path</p>
+									<p className="text-sm text-muted-foreground font-mono">
+										{currentWallpaper.path}
+									</p>
+								</div>
+								<div>
+									<p className="text-sm font-medium text-foreground">Monitor</p>
+									<p className="text-sm text-muted-foreground">
+										{currentWallpaper.monitor || "All monitors"}
+									</p>
+								</div>
+							</div>
+						</div>
+					) : (
+						<div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
+							<ImageIcon className="w-16 h-16 mb-4" />
+							<p className="text-lg font-medium text-foreground">No wallpaper configured</p>
+							<p className="text-sm text-muted-foreground">Click "Change Wallpaper" to set one</p>
+						</div>
+					)}
+				</CardContent>
+			</Card>
+
+			{/*{config && config.preloads.length > 0 && (*/}
+			{/*	<Card>*/}
+			{/*		<CardHeader>*/}
+			{/*			<CardTitle>Preloaded Images</CardTitle>*/}
+			{/*			<CardDescription>*/}
+			{/*				Images preloaded by hyprpaper for faster switching*/}
+			{/*			</CardDescription>*/}
+			{/*		</CardHeader>*/}
+			{/*		<CardContent>*/}
+			{/*			<div className="space-y-2">*/}
+			{/*				{config.preloads.map((preload, index) => (*/}
+			{/*					<div*/}
+			{/*						key={index}*/}
+			{/*						className="text-sm font-mono p-2 bg-muted rounded-md"*/}
+			{/*					>*/}
+			{/*						{preload}*/}
+			{/*					</div>*/}
+			{/*				))}*/}
+			{/*			</div>*/}
+			{/*		</CardContent>*/}
+			{/*	</Card>*/}
+			{/*)}*/}
+		</div>
+	);
+}

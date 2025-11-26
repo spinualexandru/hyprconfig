@@ -10,6 +10,9 @@ Configure hyprland using a GUI.
 - [ ] Animations
 - [ ] Blur
 - [ ] Shadows
+- [x] Change Wallpaper
+- [x] Sync with hyprpaper
+- [x] Sync with matugen
 
 ## System
 - [ ] Startup Appplications
@@ -70,8 +73,8 @@ Configure hyprland using a GUI.
 - [x] Display link status (UP/DOWN)
 - [x] Display available Wi-Fi network
 - [x] Scan for new networks
-    - [ ] Display SSID
-    - [ ] Display security protocol (e.g. WPA2 / WPA3 etc)
+    - [x] Display SSID
+    - [x] Display security protocol (e.g. WPA2 / WPA3 etc)
     - [ ] Display if it's not protected
 - [x] Display signal strength
 - [x] Detailed view
