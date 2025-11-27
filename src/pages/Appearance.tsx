@@ -5,7 +5,8 @@ import { Image as ImageIcon, RefreshCw, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
 	Card,
 	CardContent,
@@ -69,6 +70,21 @@ export default function Appearance() {
 		checkMatugen();
 	}, []);
 
+	useEffect(() => {
+		const loadPreferences = async () => {
+			try {
+				const prefs = await invoke<{ matugen: { enable: boolean; light_mode: boolean } }>(
+					"get_preferences"
+				);
+				setSyncMatugen(prefs.matugen.enable);
+				setMatugenLightMode(prefs.matugen.light_mode);
+			} catch (err) {
+				console.error("Failed to load preferences:", err);
+			}
+		};
+		loadPreferences();
+	}, []);
+
 	const handleChangeWallpaper = async () => {
 		try {
 			// Get current wallpaper directory to use as default path
@@ -126,6 +142,30 @@ export default function Appearance() {
 		}
 	};
 
+	const handleSyncMatugenChange = async (checked: boolean) => {
+		setSyncMatugen(checked);
+		try {
+			await invoke("update_matugen_preferences", {
+				enable: checked,
+				lightMode: matugenLightMode
+			});
+		} catch (err) {
+			toast.error(`Failed to save preference: ${err}`);
+		}
+	};
+
+	const handleLightModeChange = async (checked: boolean) => {
+		setMatugenLightMode(checked);
+		try {
+			await invoke("update_matugen_preferences", {
+				enable: syncMatugen,
+				lightMode: checked
+			});
+		} catch (err) {
+			toast.error(`Failed to save preference: ${err}`);
+		}
+	};
+
 	const getCurrentWallpaper = () => {
 		if (!config || config.wallpapers.length === 0) return null;
 		// Get the last wallpaper (most recent)
@@ -152,37 +192,6 @@ export default function Appearance() {
 						</CardDescription>
 					</div>
 					<div className="flex gap-2 items-center">
-						{matugenExists && (
-							<>
-								<div className="flex items-center gap-2 mr-2">
-									<Checkbox
-										id="matugen-light-mode"
-										checked={matugenLightMode}
-										onCheckedChange={(checked) => setMatugenLightMode(checked === true)}
-										disabled={!syncMatugen}
-									/>
-									<label
-										htmlFor="matugen-light-mode"
-										className={`text-sm font-medium cursor-pointer ${!syncMatugen ? 'opacity-50' : ''}`}
-									>
-										Matugen Light Mode
-									</label>
-								</div>
-								<div className="flex items-center gap-2 mr-2">
-									<Checkbox
-										id="sync-matugen"
-										checked={syncMatugen}
-										onCheckedChange={(checked) => setSyncMatugen(checked === true)}
-									/>
-									<label
-										htmlFor="sync-matugen"
-										className="text-sm font-medium cursor-pointer"
-									>
-										Sync Matugen
-									</label>
-								</div>
-							</>
-						)}
 						<Button
 							variant="outline"
 							size="icon"
@@ -264,6 +273,59 @@ export default function Appearance() {
 					)}
 				</CardContent>
 			</Card>
+
+			{matugenExists && (
+				<Card>
+					<CardHeader>
+						<CardTitle>General</CardTitle>
+						<CardDescription>
+							Appearance settings and theme synchronization
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-6">
+						<div>
+							<h3 className="text-base font-semibold mb-4">Matugen</h3>
+							<div className="grid grid-cols-2 gap-6">
+								<div className="flex items-center justify-between">
+									<div className="space-y-0.5">
+										<Label htmlFor="sync-matugen" className="text-sm font-medium">
+											Enable
+										</Label>
+										<p className="text-sm text-muted-foreground">
+											Automatically generate color scheme from wallpaper
+										</p>
+									</div>
+									<Switch
+										id="sync-matugen"
+										checked={syncMatugen}
+										onCheckedChange={handleSyncMatugenChange}
+									/>
+								</div>
+
+								<div className="flex items-center justify-between">
+									<div className="space-y-0.5">
+										<Label
+											htmlFor="matugen-light-mode"
+											className={`text-sm font-medium ${!syncMatugen ? 'opacity-50' : ''}`}
+										>
+											Light Mode
+										</Label>
+										<p className={`text-sm text-muted-foreground ${!syncMatugen ? 'opacity-50' : ''}`}>
+											Use light color scheme instead of dark
+										</p>
+									</div>
+									<Switch
+										id="matugen-light-mode"
+										checked={matugenLightMode}
+										onCheckedChange={handleLightModeChange}
+										disabled={!syncMatugen}
+									/>
+								</div>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			)}
 
 			{/*{config && config.preloads.length > 0 && (*/}
 			{/*	<Card>*/}

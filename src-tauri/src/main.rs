@@ -3,6 +3,7 @@
 mod hyprland_backend;
 mod hyprpaper_backend;
 mod os_backend;
+mod config_backend;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -28,6 +29,8 @@ fn main() {
             hyprpaper_backend::replace_wallpaper,
             os_backend::tool_exists,
             os_backend::run_matugen,
+            config_backend::get_preferences,
+            config_backend::update_matugen_preferences,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
