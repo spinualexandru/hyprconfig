@@ -33,6 +33,7 @@ export default function Appearance() {
 	const [updating, setUpdating] = useState(false);
 	const [matugenExists, setMatugenExists] = useState(false);
 	const [syncMatugen, setSyncMatugen] = useState(false);
+	const [matugenLightMode, setMatugenLightMode] = useState(false);
 
 	const loadConfig = async () => {
 		setLoading(true);
@@ -70,9 +71,23 @@ export default function Appearance() {
 
 	const handleChangeWallpaper = async () => {
 		try {
+			// Get current wallpaper directory to use as default path
+			let defaultPath: string | undefined;
+			const current = getCurrentWallpaper();
+			if (current?.path) {
+				const lastSlash = Math.max(
+					current.path.lastIndexOf('/'),
+					current.path.lastIndexOf('\\')
+				);
+				if (lastSlash !== -1) {
+					defaultPath = current.path.substring(0, lastSlash);
+				}
+			}
+
 			const selected = await open({
 				multiple: false,
 				directory: false,
+				defaultPath,
 				filters: [
 					{
 						name: "Images",
@@ -90,7 +105,10 @@ export default function Appearance() {
 				// Run matugen if enabled
 				if (syncMatugen) {
 					try {
-						await invoke("run_matugen", { imagePath: selected });
+						await invoke("run_matugen", {
+							imagePath: selected,
+							lightMode: matugenLightMode
+						});
 						toast.success("Wallpaper updated and Matugen synced");
 					} catch (matugenErr) {
 						toast.warning(`Wallpaper updated but Matugen failed: ${matugenErr}`);
@@ -135,19 +153,35 @@ export default function Appearance() {
 					</div>
 					<div className="flex gap-2 items-center">
 						{matugenExists && (
-							<div className="flex items-center gap-2 mr-2">
-								<Checkbox
-									id="sync-matugen"
-									checked={syncMatugen}
-									onCheckedChange={(checked) => setSyncMatugen(checked === true)}
-								/>
-								<label
-									htmlFor="sync-matugen"
-									className="text-sm font-medium cursor-pointer"
-								>
-									Sync Matugen
-								</label>
-							</div>
+							<>
+								<div className="flex items-center gap-2 mr-2">
+									<Checkbox
+										id="matugen-light-mode"
+										checked={matugenLightMode}
+										onCheckedChange={(checked) => setMatugenLightMode(checked === true)}
+										disabled={!syncMatugen}
+									/>
+									<label
+										htmlFor="matugen-light-mode"
+										className={`text-sm font-medium cursor-pointer ${!syncMatugen ? 'opacity-50' : ''}`}
+									>
+										Matugen Light Mode
+									</label>
+								</div>
+								<div className="flex items-center gap-2 mr-2">
+									<Checkbox
+										id="sync-matugen"
+										checked={syncMatugen}
+										onCheckedChange={(checked) => setSyncMatugen(checked === true)}
+									/>
+									<label
+										htmlFor="sync-matugen"
+										className="text-sm font-medium cursor-pointer"
+									>
+										Sync Matugen
+									</label>
+								</div>
+							</>
 						)}
 						<Button
 							variant="outline"

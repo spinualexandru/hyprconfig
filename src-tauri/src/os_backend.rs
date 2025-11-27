@@ -11,9 +11,14 @@ pub fn tool_exists(name: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn run_matugen(image_path: String) -> Result<(), String> {
+pub fn run_matugen(image_path: String, light_mode: bool) -> Result<(), String> {
+    let mut args = vec!["image", &image_path];
+    if light_mode {
+        args.push("--mode");
+        args.push("light");
+    }
     let output = Command::new("matugen")
-        .args(&["image", &image_path])
+        .args(&args)
         .output()
         .map_err(|e| format!("Failed to execute matugen: {}", e))?;
 
