@@ -3,3 +3,4 @@ node_modules/
 .zed/
 .vscode/
 **/target/
+dist/

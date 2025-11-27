@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -13,9 +13,15 @@ import General from "@/pages/General";
 import Keybinds from "@/pages/Keybinds";
 import Network from "@/pages/Network";
 import Variables from "@/pages/Variables";
+import { loadTheme } from "@/lib/theme-loader";
 
 function App() {
 	const [currentPage, setCurrentPage] = useState("general");
+
+	// Load theme CSS on mount
+	useEffect(() => {
+		loadTheme();
+	}, []);
 
 	const renderPage = () => {
 		switch (currentPage) {

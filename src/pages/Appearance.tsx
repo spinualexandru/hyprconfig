@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Image as ImageIcon, RefreshCw, Upload } from "lucide-react";
+import { FileCode, Image as ImageIcon, Palette, RefreshCw, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { reloadTheme, ensureMatugenTemplate } from "@/lib/theme-loader";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -125,6 +126,8 @@ export default function Appearance() {
 							imagePath: selected,
 							lightMode: matugenLightMode
 						});
+						// Reload theme to pick up matugen-generated colors
+						await reloadTheme();
 						toast.success("Wallpaper updated and Matugen synced");
 					} catch (matugenErr) {
 						toast.warning(`Wallpaper updated but Matugen failed: ${matugenErr}`);
@@ -322,6 +325,53 @@ export default function Appearance() {
 									/>
 								</div>
 							</div>
+						</div>
+
+						<div>
+							<h3 className="text-base font-semibold mb-4">Theme</h3>
+							<div className="flex gap-3">
+								<Button
+									variant="outline"
+									onClick={async () => {
+										try {
+											const templatePath = await ensureMatugenTemplate();
+											toast.success(`Template created at ${templatePath}`);
+										} catch (err) {
+											toast.error(`Failed to create template: ${err}`);
+										}
+									}}
+								>
+									<FileCode className="h-4 w-4 mr-2" />
+									Setup Template
+								</Button>
+								<Button
+									variant="outline"
+									onClick={async () => {
+										try {
+											// Run matugen on current wallpaper if available
+											if (currentWallpaper?.path) {
+												await invoke("run_matugen", {
+													imagePath: currentWallpaper.path,
+													lightMode: matugenLightMode
+												});
+											}
+											// Reload the theme CSS
+											await reloadTheme();
+											toast.success("Theme regenerated and reloaded");
+										} catch (err) {
+											toast.error(`Failed to reload theme: ${err}`);
+										}
+									}}
+									disabled={!currentWallpaper}
+								>
+									<Palette className="h-4 w-4 mr-2" />
+									Reload Theme
+								</Button>
+							</div>
+							<p className="text-sm text-muted-foreground mt-2">
+								Setup Template creates the matugen template at ~/.config/matugen/templates/hyprconfig.css.
+								Reload Theme runs matugen on the current wallpaper and reloads the CSS.
+							</p>
 						</div>
 					</CardContent>
 				</Card>

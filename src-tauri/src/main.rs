@@ -31,6 +31,8 @@ fn main() {
             os_backend::run_matugen,
             config_backend::get_preferences,
             config_backend::update_matugen_preferences,
+            config_backend::get_theme_css,
+            config_backend::ensure_matugen_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
