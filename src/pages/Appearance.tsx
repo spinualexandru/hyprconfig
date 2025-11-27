@@ -16,6 +16,13 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 
 interface Wallpaper {
 	monitor: string;
@@ -36,6 +43,7 @@ export default function Appearance() {
 	const [matugenExists, setMatugenExists] = useState(false);
 	const [syncMatugen, setSyncMatugen] = useState(false);
 	const [matugenLightMode, setMatugenLightMode] = useState(false);
+	const [generatorType, setGeneratorType] = useState("scheme-tonal-spot");
 
 	const loadConfig = async () => {
 		setLoading(true);
@@ -74,11 +82,16 @@ export default function Appearance() {
 	useEffect(() => {
 		const loadPreferences = async () => {
 			try {
-				const prefs = await invoke<{ matugen: { enable: boolean; light_mode: boolean } }>(
-					"get_preferences"
-				);
+				const prefs = await invoke<{
+					matugen: {
+						enable: boolean;
+						light_mode: boolean;
+						generator_type: string;
+					};
+				}>("get_preferences");
 				setSyncMatugen(prefs.matugen.enable);
 				setMatugenLightMode(prefs.matugen.light_mode);
+				setGeneratorType(prefs.matugen.generator_type);
 			} catch (err) {
 				console.error("Failed to load preferences:", err);
 			}
@@ -124,7 +137,8 @@ export default function Appearance() {
 					try {
 						await invoke("run_matugen", {
 							imagePath: selected,
-							lightMode: matugenLightMode
+							lightMode: matugenLightMode,
+							generatorType: generatorType,
 						});
 						// Reload theme to pick up matugen-generated colors
 						await reloadTheme();
@@ -150,7 +164,8 @@ export default function Appearance() {
 		try {
 			await invoke("update_matugen_preferences", {
 				enable: checked,
-				lightMode: matugenLightMode
+				lightMode: matugenLightMode,
+				generatorType: generatorType,
 			});
 		} catch (err) {
 			toast.error(`Failed to save preference: ${err}`);
@@ -162,7 +177,21 @@ export default function Appearance() {
 		try {
 			await invoke("update_matugen_preferences", {
 				enable: syncMatugen,
-				lightMode: checked
+				lightMode: checked,
+				generatorType: generatorType,
+			});
+		} catch (err) {
+			toast.error(`Failed to save preference: ${err}`);
+		}
+	};
+
+	const handleGeneratorTypeChange = async (value: string) => {
+		setGeneratorType(value);
+		try {
+			await invoke("update_matugen_preferences", {
+				enable: syncMatugen,
+				lightMode: matugenLightMode,
+				generatorType: value,
 			});
 		} catch (err) {
 			toast.error(`Failed to save preference: ${err}`);
@@ -325,6 +354,38 @@ export default function Appearance() {
 									/>
 								</div>
 							</div>
+
+							<div className="space-y-2">
+								<Label htmlFor="generator-type" className="text-sm font-medium">
+									Generator Type
+								</Label>
+								<Select
+									value={generatorType}
+									onValueChange={handleGeneratorTypeChange}
+									disabled={!syncMatugen}
+								>
+									<SelectTrigger
+										id="generator-type"
+										className={!syncMatugen ? "opacity-50" : ""}
+									>
+										<SelectValue placeholder="Select generator type" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="scheme-content">Scheme Content</SelectItem>
+										<SelectItem value="scheme-expressive">Scheme Expressive</SelectItem>
+										<SelectItem value="scheme-fidelity">Scheme Fidelity</SelectItem>
+										<SelectItem value="scheme-fruit-salad">Scheme Fruit Salad</SelectItem>
+										<SelectItem value="scheme-monochrome">Scheme Monochrome</SelectItem>
+										<SelectItem value="scheme-neutral">Scheme Neutral</SelectItem>
+										<SelectItem value="scheme-rainbow">Scheme Rainbow</SelectItem>
+										<SelectItem value="scheme-tonal-spot">Scheme Tonal Spot</SelectItem>
+										<SelectItem value="scheme-vibrant">Scheme Vibrant</SelectItem>
+									</SelectContent>
+								</Select>
+								<p className={`text-sm text-muted-foreground ${!syncMatugen ? 'opacity-50' : ''}`}>
+									Color scheme generation algorithm
+								</p>
+							</div>
 						</div>
 
 						<div>
@@ -352,7 +413,8 @@ export default function Appearance() {
 											if (currentWallpaper?.path) {
 												await invoke("run_matugen", {
 													imagePath: currentWallpaper.path,
-													lightMode: matugenLightMode
+													lightMode: matugenLightMode,
+													generatorType: generatorType,
 												});
 											}
 											// Reload the theme CSS

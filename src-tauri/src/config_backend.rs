@@ -8,6 +8,7 @@ use toml_edit::{value, DocumentMut};
 pub struct MatugenPreferences {
     pub enable: bool,
     pub light_mode: bool,
+    pub generator_type: String,
 }
 
 /// Main preferences configuration structure
@@ -45,6 +46,7 @@ fn ensure_config_exists(config_path: &PathBuf) -> Result<(), String> {
         let default_config = r#"[matugen]
 enable = false
 light_mode = false
+generator_type = "scheme-tonal-spot"
 "#;
         fs::write(config_path, default_config)
             .map_err(|e| format!("Failed to create default config: {}", e))?;
@@ -83,14 +85,29 @@ pub fn get_preferences() -> Result<PreferencesConfig, String> {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    let generator_type = doc
+        .get("matugen")
+        .and_then(|t| t.get("generator_type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("scheme-tonal-spot")
+        .to_string();
+
     Ok(PreferencesConfig {
-        matugen: MatugenPreferences { enable, light_mode },
+        matugen: MatugenPreferences {
+            enable,
+            light_mode,
+            generator_type,
+        },
     })
 }
 
 /// Tauri command to update matugen preferences
 #[tauri::command]
-pub fn update_matugen_preferences(enable: bool, light_mode: bool) -> Result<(), String> {
+pub fn update_matugen_preferences(
+    enable: bool,
+    light_mode: bool,
+    generator_type: String,
+) -> Result<(), String> {
     let config_path = get_config_path()?;
     ensure_config_exists(&config_path)?;
 
@@ -104,6 +121,7 @@ pub fn update_matugen_preferences(enable: bool, light_mode: bool) -> Result<(), 
     // Update the values - toml_edit preserves all other content
     doc["matugen"]["enable"] = value(enable);
     doc["matugen"]["light_mode"] = value(light_mode);
+    doc["matugen"]["generator_type"] = value(generator_type);
 
     // Write back to file
     fs::write(&config_path, doc.to_string())

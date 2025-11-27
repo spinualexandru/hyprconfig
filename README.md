@@ -13,6 +13,7 @@ Configure hyprland using a GUI.
 - [x] Change Wallpaper
 - [x] Sync with hyprpaper
 - [x] Sync with matugen
+- [x] Matugen sync type
 
 ## System
 - [ ] Startup Appplications
