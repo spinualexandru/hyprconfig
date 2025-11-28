@@ -1,7 +1,6 @@
 # hyprconfig
 
 
-
 <details>
     <summary>Demo</summary>
 
@@ -12,16 +11,16 @@ https://github.com/user-attachments/assets/4fa72335-f117-4fed-a3fb-e0b2b6437abb
 </details>
 
 
-
-
-
-
-
 Configure hyprland using a GUI.
 
-# Roadmap/Features
+## How to run
+```
+pnpm tauri dev -- --bin tauri-app
+```
 
-## Appearance
+## Roadmap/Features
+
+### Appearance
 
 - [ ] Border Colors
 - [ ] Animations
@@ -32,7 +31,7 @@ Configure hyprland using a GUI.
 - [x] Sync with matugen
 - [x] Matugen sync type
 
-## System
+### System
 - [ ] Startup Appplications
 - [ ] Startup Services
 - [ ] System level environment variables
@@ -45,7 +44,7 @@ Configure hyprland using a GUI.
 - [ ] Remove user from groups
 - [ ] Change Password
 
-## Keybinds
+### Keybinds
 
 - [x] Display keybinds
 - [x] Tooltip to show values of variables when keybinds contain variables
@@ -57,13 +56,13 @@ Configure hyprland using a GUI.
     - [x] Dispatcher text input with auto complete
     - [x] Parameters (e.g. $variable) 
 
-## Variables
+### Variables
 
 - [x] Display defined variables
 - [x] Modify variables inline ( Excel like )
 - [x] Add variables 
 
-## Display
+### Display
 
 - [x] Add display page
 - [x] Display information on the monitors
@@ -82,7 +81,7 @@ Configure hyprland using a GUI.
 - [ ] VRR Toggle
 - [ ] Tearing toggle
 
-## Network
+### Network
 
 - [x] Add network page
 - [x] Display network information
@@ -111,7 +110,7 @@ Configure hyprland using a GUI.
     - [ ] Notification for "Connected" state
     - [ ] Re-prompt for password if it's invalid
 
-## Plugins
+### Plugins
 
 - [ ] Display installed plugins
 - [ ] List available plugins
@@ -120,7 +119,7 @@ Configure hyprland using a GUI.
 - [ ] Uninstall a plugin
 - [ ] Check plugin for updates
 
-## Audio
+### Audio
 
 - [ ] Integrate pipeline connector
 - [ ] Display Audio Controllers
@@ -130,7 +129,7 @@ Configure hyprland using a GUI.
 - [ ] Change bitrate
 - [ ] Display per application volume modifier
 
-## About
+### About
 - [x] Add about page
 - [x] Display available GPUs
 - [x] Display used and available RAM
@@ -143,7 +142,7 @@ Configure hyprland using a GUI.
 - [x] Display uptime version ( and commit if available )
 - [x] Display shell
 
-## Misc
+### Misc
 - [ ] Export/Backup config
 - [ ] Rice bundler
     - [ ] Detect common tools
