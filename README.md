@@ -1,7 +1,20 @@
 # hyprconfig
 
 
+
+<details>
+    <summary>Demo</summary>
+
 https://github.com/user-attachments/assets/cd3f8ad1-40b3-4547-8da7-3544daaa0815
+
+https://github.com/user-attachments/assets/4fa72335-f117-4fed-a3fb-e0b2b6437abb
+
+</details>
+
+
+
+
+
 
 
 Configure hyprland using a GUI.
