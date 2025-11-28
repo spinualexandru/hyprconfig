@@ -1,5 +1,9 @@
 # hyprconfig
 
+
+https://github.com/user-attachments/assets/cd3f8ad1-40b3-4547-8da7-3544daaa0815
+
+
 Configure hyprland using a GUI.
 
 # Roadmap/Features
