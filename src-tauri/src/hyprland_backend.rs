@@ -1114,3 +1114,107 @@ pub fn delete_keybind(index: usize) -> Result<(), String> {
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn apply_monitor_settings(
+    name: String,
+    width: u16,
+    height: u16,
+    refresh_rate: f32,
+    x: i32,
+    y: i32,
+    scale: f32,
+) -> Result<(), String> {
+    // Format: monitor=NAME,WIDTHxHEIGHT@RATEHz,XxY,SCALE
+    let monitor_config = format!(
+        "{},{}x{}@{:.2}Hz,{}x{},{}",
+        name, width, height, refresh_rate, x, y, scale
+    );
+
+    let output = Command::new("hyprctl")
+        .args(["keyword", "monitor", &monitor_config])
+        .output()
+        .map_err(|e| format!("Failed to run hyprctl: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to apply monitor settings: {}", stderr));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_monitor_settings(
+    name: String,
+    width: u16,
+    height: u16,
+    refresh_rate: f32,
+    x: i32,
+    y: i32,
+    scale: f32,
+) -> Result<(), String> {
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
+
+    let config_path = Path::new(&home_dir).join(".config/hypr/display.conf");
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Display config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    // Parse the config file using hyprlang
+    let mut config = Config::new();
+    register_hyprland_handlers(&mut config);
+    config
+        .parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse display config: {:?}", e))?;
+
+    // Format: NAME,WIDTHxHEIGHT@RATEHz,XxY,SCALE
+    let monitor_args = format!(
+        "{},{}x{}@{:.2}Hz,{}x{},{}",
+        name, width, height, refresh_rate, x, y, scale
+    );
+
+    // Get existing monitor handler calls
+    let monitors = config
+        .all_handler_calls()
+        .get("monitor")
+        .cloned()
+        .unwrap_or_else(Vec::new);
+
+    // Find and remove the monitor line matching this name (or empty name for fallback)
+    let mut found_index: Option<usize> = None;
+    for (i, monitor_str) in monitors.iter().enumerate() {
+        let parts: Vec<&str> = monitor_str.split(',').collect();
+        if !parts.is_empty() {
+            let existing_name = parts[0].trim();
+            if existing_name == name || (existing_name.is_empty() && name.is_empty()) {
+                found_index = Some(i);
+                break;
+            }
+        }
+    }
+
+    // Remove existing monitor line if found
+    if let Some(index) = found_index {
+        config
+            .remove_handler_call("monitor", index)
+            .map_err(|e| format!("Failed to remove existing monitor config: {:?}", e))?;
+    }
+
+    // Add new monitor configuration
+    config
+        .add_handler_call("monitor", monitor_args)
+        .map_err(|e| format!("Failed to add monitor config: {:?}", e))?;
+
+    // Save the config file
+    config
+        .save_as(&config_path)
+        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+
+    Ok(())
+}

@@ -1,8 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { DisplayCardSkeleton } from "@/components/displays/DisplaySkeleton";
 import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import {
 	Card,
 	CardContent,
@@ -55,7 +64,11 @@ export default function Displays() {
 	const [error, setError] = useState<string | null>(null);
 	const [monitorSettings, setMonitorSettings] = useState<MonitorSettings>({});
 	const [hasChanges, setHasChanges] = useState(false);
-	
+	const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+	const [countdown, setCountdown] = useState(10);
+	const [originalMonitorData, setOriginalMonitorData] = useState<MonitorInfo[]>([]);
+	const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
 	useEffect(() => {
 		loadMonitors();
 	}, []);
@@ -68,6 +81,7 @@ export default function Displays() {
 			.then((result) => {
 				setMonitors(result);
 				setCachedMonitors(result); // Cache for next time
+				setOriginalMonitorData(result); // Store original data for revert
 
 				// Initialize monitor settings with current values
 				const initialSettings: MonitorSettings = {};
@@ -131,16 +145,157 @@ export default function Displays() {
 		setHasChanges(true);
 	};
 
-	const handleApply = () => {
-		// TODO: Apply the changes (implement later)
-		console.log("Applying changes:", monitorSettings);
+	// Clear countdown timer on unmount
+	useEffect(() => {
+		return () => {
+			if (countdownRef.current) {
+				clearInterval(countdownRef.current);
+			}
+		};
+	}, []);
+
+	// Countdown effect
+	useEffect(() => {
+		if (showConfirmDialog && countdown > 0) {
+			countdownRef.current = setInterval(() => {
+				setCountdown((c) => c - 1);
+			}, 1000);
+			return () => {
+				if (countdownRef.current) {
+					clearInterval(countdownRef.current);
+				}
+			};
+		}
+		if (countdown === 0 && showConfirmDialog) {
+			handleRevert();
+		}
+	}, [showConfirmDialog, countdown]);
+
+	const handleRevert = useCallback(async () => {
+		// Clear timer
+		if (countdownRef.current) {
+			clearInterval(countdownRef.current);
+			countdownRef.current = null;
+		}
+
+		// Revert each monitor to original settings
+		for (const monitor of originalMonitorData) {
+			try {
+				await invoke("apply_monitor_settings", {
+					name: monitor.name,
+					width: monitor.width,
+					height: monitor.height,
+					refreshRate: monitor.refresh_rate,
+					x: monitor.x,
+					y: monitor.y,
+					scale: monitor.scale,
+				});
+			} catch (err) {
+				toast.error(`Failed to revert ${monitor.name}: ${err}`);
+			}
+		}
+
+		// Reset UI state
+		const resetSettings: MonitorSettings = {};
+		originalMonitorData.forEach((monitor) => {
+			resetSettings[monitor.id] = {
+				resolution: `${monitor.width}x${monitor.height}`,
+				refreshRate: monitor.refresh_rate.toFixed(2),
+			};
+		});
+		setMonitorSettings(resetSettings);
 		setHasChanges(false);
+		setShowConfirmDialog(false);
+		setCountdown(10);
+		toast.success("Display settings reverted");
+	}, [originalMonitorData]);
+
+	const handleConfirm = async () => {
+		// Clear timer
+		if (countdownRef.current) {
+			clearInterval(countdownRef.current);
+			countdownRef.current = null;
+		}
+
+		// Save settings to config file
+		for (const monitor of displayMonitors) {
+			const settings = monitorSettings[monitor.id];
+			if (!settings) continue;
+
+			const [width, height] = settings.resolution.split("x").map(Number);
+			const refreshRate = parseFloat(settings.refreshRate);
+
+			try {
+				await invoke("save_monitor_settings", {
+					name: monitor.name,
+					width,
+					height,
+					refreshRate,
+					x: monitor.x,
+					y: monitor.y,
+					scale: monitor.scale,
+				});
+			} catch (err) {
+				toast.error(`Failed to save ${monitor.name}: ${err}`);
+				setShowConfirmDialog(false);
+				setCountdown(10);
+				return;
+			}
+		}
+
+		// Update original data to match new settings
+		setOriginalMonitorData(displayMonitors.map((m) => {
+			const settings = monitorSettings[m.id];
+			if (!settings) return m;
+			const [width, height] = settings.resolution.split("x").map(Number);
+			return {
+				...m,
+				width,
+				height,
+				refresh_rate: parseFloat(settings.refreshRate),
+			};
+		}));
+
+		setHasChanges(false);
+		setShowConfirmDialog(false);
+		setCountdown(10);
+		toast.success("Display settings saved");
+	};
+
+	const handleApply = async () => {
+		// Apply settings via hyprctl
+		for (const monitor of displayMonitors) {
+			const settings = monitorSettings[monitor.id];
+			if (!settings) continue;
+
+			const [width, height] = settings.resolution.split("x").map(Number);
+			const refreshRate = parseFloat(settings.refreshRate);
+
+			try {
+				await invoke("apply_monitor_settings", {
+					name: monitor.name,
+					width,
+					height,
+					refreshRate,
+					x: monitor.x,
+					y: monitor.y,
+					scale: monitor.scale,
+				});
+			} catch (err) {
+				toast.error(`Failed to apply settings for ${monitor.name}: ${err}`);
+				return;
+			}
+		}
+
+		// Show confirmation dialog with countdown
+		setCountdown(10);
+		setShowConfirmDialog(true);
 	};
 
 	const handleCancel = () => {
-		// Reset to current monitor values
+		// Reset to original monitor values
 		const resetSettings: MonitorSettings = {};
-		displayMonitors.forEach((monitor) => {
+		originalMonitorData.forEach((monitor) => {
 			resetSettings[monitor.id] = {
 				resolution: `${monitor.width}x${monitor.height}`,
 				refreshRate: monitor.refresh_rate.toFixed(2),
@@ -329,6 +484,38 @@ export default function Displays() {
 					</div>
 				</div>
 			)}
+
+			{/* Confirmation Dialog */}
+			<Dialog open={showConfirmDialog} onOpenChange={(open) => {
+				if (!open) {
+					handleRevert();
+				}
+			}}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Keep these display settings?</DialogTitle>
+						<DialogDescription>
+							Your display settings have been changed. If you can see this dialog,
+							the new settings are working. Click "Keep Changes" to save them, or
+							they will revert automatically.
+						</DialogDescription>
+					</DialogHeader>
+					<div className="flex items-center justify-center py-4">
+						<div className="text-center">
+							<div className="text-4xl font-bold text-foreground">{countdown}</div>
+							<p className="text-sm text-muted-foreground mt-1">
+								Reverting in {countdown} second{countdown !== 1 ? "s" : ""}
+							</p>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={handleRevert}>
+							Revert
+						</Button>
+						<Button onClick={handleConfirm}>Keep Changes</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

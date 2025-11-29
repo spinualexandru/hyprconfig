@@ -20,6 +20,8 @@ fn main() {
             hyprland_backend::add_keybind,
             hyprland_backend::edit_keybind,
             hyprland_backend::delete_keybind,
+            hyprland_backend::apply_monitor_settings,
+            hyprland_backend::save_monitor_settings,
             hyprpaper_backend::get_hyprpaper_config,
             hyprpaper_backend::add_preload,
             hyprpaper_backend::remove_preload,
