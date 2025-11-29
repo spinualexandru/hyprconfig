@@ -30,6 +30,7 @@ pnpm tauri dev -- --bin tauri-app
 - [x] Sync with hyprpaper
 - [x] Sync with matugen
 - [x] Matugen sync type
+- [ ] Add undo
 
 ### System
 - [ ] Startup Appplications
@@ -55,6 +56,7 @@ pnpm tauri dev -- --bin tauri-app
     - [x] Key text input with auto complete
     - [x] Dispatcher text input with auto complete
     - [x] Parameters (e.g. $variable) 
+- [ ] Add undo
 
 ### Variables
 
@@ -141,6 +143,10 @@ pnpm tauri dev -- --bin tauri-app
 - [x] Display uptime
 - [x] Display uptime version ( and commit if available )
 - [x] Display shell
+
+### Configuration
+- [ ] Add option to enable .backup folder for the configs
+- [ ] Add undo
 
 ### Misc
 - [ ] Export/Backup config

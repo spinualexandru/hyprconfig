@@ -109,9 +109,6 @@ export default function Network() {
 	const connectedWifi = displayWifiNetworks.filter((net) => net.connected);
 	const availableWifi = displayWifiNetworks.filter((net) => !net.connected);
 
-	// Show WiFi loading spinner only when refreshing with cached data
-	const showWifiRefreshSpinner = loadingWifi && cachedWifiNetworks.length > 0;
-
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex items-center justify-between">

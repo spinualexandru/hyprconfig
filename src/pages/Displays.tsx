@@ -55,7 +55,7 @@ export default function Displays() {
 	const [error, setError] = useState<string | null>(null);
 	const [monitorSettings, setMonitorSettings] = useState<MonitorSettings>({});
 	const [hasChanges, setHasChanges] = useState(false);
-	const [stuff, setStuff] = useState(false);
+	
 	useEffect(() => {
 		loadMonitors();
 	}, []);
