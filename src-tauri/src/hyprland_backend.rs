@@ -1,11 +1,17 @@
 use hyprland::data::Monitors;
 use hyprland::shared::HyprData;
-use hyprlang::Config;
+use hyprlang::Hyprland;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::panic;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+fn get_hyprland_config_path() -> Result<PathBuf, String> {
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
+    Ok(Path::new(&home_dir).join(".config/hypr/hyprland.conf"))
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DisplayMode {
@@ -686,43 +692,10 @@ pub struct Keybind {
     pub dispatcher: String,
     pub params: String,
 }
-fn register_hyprland_handlers(config: &mut Config) {
-    // Register root-level Hyprland keywords as handlers
-    let root_keywords = vec![
-        "monitor",
-        "env",
-        "bind",
-        "bindm",
-        "bindel",
-        "bindl",
-        "bindr",
-        "windowrule",
-        "windowrulev2",
-        "workspace",
-        "exec",
-        "exec-once",
-        "permission",
-        "blurls",
-        "layerrule",
-        "gesture",
-        "source",
-    ];
 
-    for keyword in root_keywords {
-        config.register_handler_fn(keyword, |_ctx| Ok(()));
-    }
-
-    // Register category-specific handlers for animations
-    config.register_category_handler_fn("animations", "animation", |_ctx| Ok(()));
-    config.register_category_handler_fn("animations", "bezier", |_ctx| Ok(()));
-}
 #[tauri::command]
 pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -732,14 +705,13 @@ pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Get all bind handler calls
-    let binds = config
+    let binds = hypr
+        .config()
         .all_handler_calls()
         .get("bind")
         .cloned()
@@ -787,15 +759,12 @@ pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
 pub struct Variable {
     pub name: String,
     pub value: String,
+    pub source_file: Option<String>,
 }
 
 #[tauri::command]
 pub fn get_variables() -> Result<Vec<Variable>, String> {
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -805,20 +774,30 @@ pub fn get_variables() -> Result<Vec<Variable>, String> {
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
-    // Get all variables
-    let variables_map = config.variables();
+    let hypr_dir = config_path.parent().unwrap();
+    let variables_map = hypr.config().variables();
     let mut variables = Vec::new();
 
     for (name, value) in variables_map {
+        // Get source file using variable key format "$VARNAME"
+        let source_file = hypr
+            .config()
+            .get_key_source_file(&format!("${}", name))
+            .map(|p| {
+                p.strip_prefix(hypr_dir)
+                    .unwrap_or(p)
+                    .display()
+                    .to_string()
+            });
+
         variables.push(Variable {
             name: name.clone(),
             value: value.clone(),
+            source_file,
         });
     }
 
@@ -830,11 +809,7 @@ pub fn get_variables() -> Result<Vec<Variable>, String> {
 
 #[tauri::command]
 pub fn set_variable(name: String, value: String) -> Result<(), String> {
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -844,19 +819,17 @@ pub fn set_variable(name: String, value: String) -> Result<(), String> {
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Set the variable (mutation API)
-    config.set_variable(name.clone(), value.clone());
+    hypr.config_mut().set_variable(name.clone(), value.clone());
 
     // Save the config file
-    config
-        .save_as(&config_path)
-        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
 
     Ok(())
 }
@@ -874,11 +847,7 @@ pub fn add_variable(name: String, value: String) -> Result<(), String> {
         return Err("Variable name cannot be empty".to_string());
     }
 
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -888,30 +857,24 @@ pub fn add_variable(name: String, value: String) -> Result<(), String> {
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Add the variable (same as set_variable in hyprlang)
-    config.set_variable(name.clone(), value.clone());
+    hypr.config_mut().set_variable(name.clone(), value.clone());
 
     // Save the config file
-    config
-        .save_as(&config_path)
-        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
 
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_variable(name: String) -> Result<(), String> {
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/programs.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -921,19 +884,17 @@ pub fn delete_variable(name: String) -> Result<(), String> {
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Remove the variable (mutation API)
-    config.remove_variable(&name);
+    hypr.config_mut().remove_variable(&name);
 
     // Save the config file
-    config
-        .save_as(&config_path)
-        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
 
     Ok(())
 }
@@ -954,11 +915,7 @@ pub fn add_keybind(
         return Err("Dispatcher is required".to_string());
     }
 
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -968,10 +925,8 @@ pub fn add_keybind(
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Format bind args: "MODS, KEY, dispatcher, params"
@@ -994,14 +949,14 @@ pub fn add_keybind(
     };
 
     // Add handler call (mutation API)
-    config
+    hypr.config_mut()
         .add_handler_call("bind", bind_args)
         .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
 
     // Save the config file
-    config
-        .save_as(&config_path)
-        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
 
     Ok(())
 }
@@ -1023,11 +978,7 @@ pub fn edit_keybind(
         return Err("Dispatcher is required".to_string());
     }
 
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1037,14 +988,12 @@ pub fn edit_keybind(
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Remove old keybind at index
-    config
+    hypr.config_mut()
         .remove_handler_call("bind", index)
         .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
 
@@ -1068,25 +1017,21 @@ pub fn edit_keybind(
     };
 
     // Add new keybind (mutation API)
-    config
+    hypr.config_mut()
         .add_handler_call("bind", bind_args)
         .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
 
     // Save the config file
-    config
-        .save_as(&config_path)
-        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
 
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_keybind(index: usize) -> Result<(), String> {
-    // Get Hyprland config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/keybinds.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1096,21 +1041,19 @@ pub fn delete_keybind(index: usize) -> Result<(), String> {
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
     // Remove handler call at index (mutation API)
-    config
+    hypr.config_mut()
         .remove_handler_call("bind", index)
         .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
 
     // Save the config file
-    config
-        .save_as(&config_path)
-        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
 
     Ok(())
 }
@@ -1154,23 +1097,18 @@ pub fn save_monitor_settings(
     y: i32,
     scale: f32,
 ) -> Result<(), String> {
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/display.conf");
+    let config_path = get_hyprland_config_path()?;
 
     if !config_path.exists() {
         return Err(format!(
-            "Display config file not found at {:?}",
+            "Hyprland config file not found at {:?}",
             config_path
         ));
     }
 
     // Parse the config file using hyprlang
-    let mut config = Config::new();
-    register_hyprland_handlers(&mut config);
-    config
-        .parse_file(&config_path)
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse display config: {:?}", e))?;
 
     // Format: NAME,WIDTHxHEIGHT@RATEHz,XxY,SCALE
@@ -1180,7 +1118,8 @@ pub fn save_monitor_settings(
     );
 
     // Get existing monitor handler calls
-    let monitors = config
+    let monitors = hypr
+        .config()
         .all_handler_calls()
         .get("monitor")
         .cloned()
@@ -1201,20 +1140,20 @@ pub fn save_monitor_settings(
 
     // Remove existing monitor line if found
     if let Some(index) = found_index {
-        config
+        hypr.config_mut()
             .remove_handler_call("monitor", index)
             .map_err(|e| format!("Failed to remove existing monitor config: {:?}", e))?;
     }
 
     // Add new monitor configuration
-    config
+    hypr.config_mut()
         .add_handler_call("monitor", monitor_args)
         .map_err(|e| format!("Failed to add monitor config: {:?}", e))?;
 
     // Save the config file
-    config
-        .save_as(&config_path)
-        .map_err(|e| format!("Failed to save config file: {:?}", e))?;
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
 
     Ok(())
 }

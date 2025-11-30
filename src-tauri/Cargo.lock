@@ -1642,9 +1642,9 @@ dependencies = [
 
 [[package]]
 name = "hyprlang"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f3dd11fc5287907053f9f7875b3b799fff9c60492919b40560b8f0770327628"
+checksum = "8b1de28b321196a959b881d774da6fff06d5eb25396e79c1ddef34e59dee7058"
 dependencies = [
  "pest",
  "pest_derive",
