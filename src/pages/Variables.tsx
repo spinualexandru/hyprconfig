@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { DollarSign, RefreshCw, Plus, Trash2, Check, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { DollarSign, RefreshCw, Plus } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -9,15 +9,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/ui/data-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Dialog,
@@ -30,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Variable } from "@/types/variables";
+import { createVariableColumns } from "@/components/variables";
 
 function VariablesTableSkeleton() {
 	return (
@@ -174,6 +167,23 @@ export default function Variables() {
 	const displayVariables =
 		loading && cachedVariables.length > 0 ? cachedVariables : variables;
 
+	const columns = useMemo(
+		() =>
+			createVariableColumns({
+				editing: {
+					editingIndex,
+					editValue,
+					editLoading,
+				},
+				onStartEdit: handleStartEdit,
+				onSaveEdit: handleSaveEdit,
+				onCancelEdit: handleCancelEdit,
+				onEditValueChange: setEditValue,
+				onDelete: handleDeleteVariable,
+			}),
+		[editingIndex, editValue, editLoading],
+	);
+
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex items-center justify-between">
@@ -240,82 +250,7 @@ export default function Variables() {
 					</CardHeader>
 					<CardContent>
 						<div className="rounded-md border">
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead className="w-[250px]">Name</TableHead>
-										<TableHead>Value</TableHead>
-										<TableHead className="w-[100px]">Actions</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{displayVariables.map((variable, index) => (
-										<TableRow key={index}>
-											<TableCell>
-												<div className="flex items-center gap-2">
-													<Badge variant="secondary">
-														<code className="text-xs">${variable.name}</code>
-													</Badge>
-												</div>
-											</TableCell>
-											<TableCell>
-												{editingIndex === index ? (
-													<div className="flex items-center gap-2">
-														<Input
-															value={editValue}
-															onChange={(e) => setEditValue(e.target.value)}
-															className="font-mono text-sm"
-															disabled={editLoading}
-															onKeyDown={(e) => {
-																if (e.key === "Enter") {
-																	handleSaveEdit(variable.name);
-																} else if (e.key === "Escape") {
-																	handleCancelEdit();
-																}
-															}}
-															autoFocus
-														/>
-														<Button
-															size="icon"
-															variant="ghost"
-															onClick={() => handleSaveEdit(variable.name)}
-															disabled={editLoading}
-														>
-															<Check className="h-4 w-4" />
-														</Button>
-														<Button
-															size="icon"
-															variant="ghost"
-															onClick={handleCancelEdit}
-															disabled={editLoading}
-														>
-															<X className="h-4 w-4" />
-														</Button>
-													</div>
-												) : (
-													<code
-														className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm cursor-pointer hover:bg-muted/80"
-														onClick={() => handleStartEdit(index, variable.value)}
-													>
-														{variable.value}
-													</code>
-												)}
-											</TableCell>
-											<TableCell>
-												{editingIndex !== index && (
-													<Button
-														size="icon"
-														variant="ghost"
-														onClick={() => handleDeleteVariable(variable.name)}
-													>
-														<Trash2 className="h-4 w-4 text-destructive" />
-													</Button>
-												)}
-											</TableCell>
-										</TableRow>
-									))}
-								</TableBody>
-							</Table>
+							<DataTable columns={columns} data={displayVariables} />
 						</div>
 					</CardContent>
 				</Card>

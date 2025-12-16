@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Keyboard, RefreshCw, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,20 +9,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DataTable } from "@/components/ui/data-table";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Keybind } from "@/types/keybinds";
 import type { Variable } from "@/types/variables";
 import {
   KeybindsTableSkeleton,
-  KeybindTableRow,
   KeybindFormDialog,
+  createKeybindColumns,
 } from "@/components/keybinds";
 
 export default function Keybinds() {
@@ -102,6 +96,16 @@ export default function Keybinds() {
   const displayKeybinds =
     loading && cachedKeybinds.length > 0 ? cachedKeybinds : keybinds;
 
+  const columns = useMemo(
+    () =>
+      createKeybindColumns({
+        variables,
+        onEdit: handleOpenEditDialog,
+        onDelete: handleDeleteKeybind,
+      }),
+    [variables],
+  );
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -168,29 +172,7 @@ export default function Keybinds() {
           <CardContent>
             <div className="rounded-md border">
               <TooltipProvider>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[200px]">Modifiers</TableHead>
-                      <TableHead className="w-[150px]">Key</TableHead>
-                      <TableHead className="w-[150px]">Action</TableHead>
-                      <TableHead>Command</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {displayKeybinds.map((keybind, index) => (
-                      <KeybindTableRow
-                        key={index}
-                        keybind={keybind}
-                        index={index}
-                        variables={variables}
-                        onEdit={handleOpenEditDialog}
-                        onDelete={handleDeleteKeybind}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
+                <DataTable columns={columns} data={displayKeybinds} />
               </TooltipProvider>
             </div>
           </CardContent>
