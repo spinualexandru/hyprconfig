@@ -8,6 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "install": "pnpm tauri build && node scripts/install.js",
+    "uninstall": "node scripts/uninstall.js",
     "lint": "biome check",
     "format": "biome format --write"
   },
