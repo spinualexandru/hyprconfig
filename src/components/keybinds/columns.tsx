@@ -15,7 +15,7 @@ import { ModifierBadges } from "./ModifierBadges";
 
 interface CreateKeybindColumnsOptions {
 	variables: Variable[];
-	onEdit: (keybind: Keybind, index: number) => void;
+	onEdit?: (keybind: Keybind, index: number) => void;
 	onDelete: (index: number) => void;
 }
 
@@ -67,13 +67,15 @@ export function createKeybindColumns({
 			size: 100,
 			cell: ({ row }) => (
 				<div className="flex gap-1">
-					<Button
-						size="icon"
-						variant="ghost"
-						onClick={() => onEdit(row.original, row.index)}
-					>
-						<Pencil className="h-4 w-4" />
-					</Button>
+					{onEdit && (
+						<Button
+							size="icon"
+							variant="ghost"
+							onClick={() => onEdit(row.original, row.index)}
+						>
+							<Pencil className="h-4 w-4" />
+						</Button>
+					)}
 					<Button
 						size="icon"
 						variant="ghost"

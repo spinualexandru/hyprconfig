@@ -22,9 +22,19 @@ fn main() {
             hyprland_backend::delete_keybind,
             hyprland_backend::apply_monitor_settings,
             hyprland_backend::save_monitor_settings,
+            // bindu handlers (universal submap bindings)
+            hyprland_backend::get_all_bindu,
+            hyprland_backend::add_bindu,
+            hyprland_backend::delete_bindu,
+            // windowrule v3 handlers
+            hyprland_backend::get_windowrule_names,
+            hyprland_backend::get_windowrule,
+            hyprland_backend::delete_windowrule,
+            // layerrule v2 handlers
+            hyprland_backend::get_layerrule_names,
+            hyprland_backend::get_layerrule,
+            hyprland_backend::delete_layerrule,
             hyprpaper_backend::get_hyprpaper_config,
-            hyprpaper_backend::add_preload,
-            hyprpaper_backend::remove_preload,
             hyprpaper_backend::set_wallpaper,
             hyprpaper_backend::remove_wallpaper,
             hyprpaper_backend::update_wallpaper,
