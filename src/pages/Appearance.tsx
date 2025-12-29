@@ -27,10 +27,10 @@ import {
 interface Wallpaper {
 	monitor: string;
 	path: string;
+	fit_mode: string;
 }
 
 interface HyprpaperConfig {
-	preloads: string[];
 	wallpapers: Wallpaper[];
 }
 
@@ -294,6 +294,12 @@ export default function Appearance() {
 										{currentWallpaper.monitor || "All monitors"}
 									</p>
 								</div>
+								<div>
+									<p className="text-sm font-medium text-foreground">Fit Mode</p>
+									<p className="text-sm text-muted-foreground">
+										{currentWallpaper.fit_mode}
+									</p>
+								</div>
 							</div>
 						</div>
 					) : (
@@ -439,28 +445,6 @@ export default function Appearance() {
 				</Card>
 			)}
 
-			{/*{config && config.preloads.length > 0 && (*/}
-			{/*	<Card>*/}
-			{/*		<CardHeader>*/}
-			{/*			<CardTitle>Preloaded Images</CardTitle>*/}
-			{/*			<CardDescription>*/}
-			{/*				Images preloaded by hyprpaper for faster switching*/}
-			{/*			</CardDescription>*/}
-			{/*		</CardHeader>*/}
-			{/*		<CardContent>*/}
-			{/*			<div className="space-y-2">*/}
-			{/*				{config.preloads.map((preload, index) => (*/}
-			{/*					<div*/}
-			{/*						key={index}*/}
-			{/*						className="text-sm font-mono p-2 bg-muted rounded-md"*/}
-			{/*					>*/}
-			{/*						{preload}*/}
-			{/*					</div>*/}
-			{/*				))}*/}
-			{/*			</div>*/}
-			{/*		</CardContent>*/}
-			{/*	</Card>*/}
-			{/*)}*/}
 		</div>
 	);
 }

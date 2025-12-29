@@ -969,6 +969,8 @@ pub fn edit_keybind(
     dispatcher: String,
     params: String,
 ) -> Result<(), String> {
+    println!("edit_keybind called: index={}, key={}, dispatcher={}", index, key, dispatcher);
+
     // Validate inputs
     if key.trim().is_empty() {
         return Err("Key is required".to_string());
@@ -979,6 +981,7 @@ pub fn edit_keybind(
     }
 
     let config_path = get_hyprland_config_path()?;
+    println!("Config path: {:?}", config_path);
 
     if !config_path.exists() {
         return Err(format!(
@@ -992,10 +995,12 @@ pub fn edit_keybind(
     hypr.parse_file(&config_path)
         .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
 
+    println!("Removing keybind at index {}", index);
     // Remove old keybind at index
     hypr.config_mut()
         .remove_handler_call("bind", index)
         .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
+    println!("Removed successfully");
 
     // Format new bind args
     let mods_str = if modifiers.is_empty() {
@@ -1017,14 +1022,18 @@ pub fn edit_keybind(
     };
 
     // Add new keybind (mutation API)
+    println!("Adding new keybind: {}", bind_args);
     hypr.config_mut()
         .add_handler_call("bind", bind_args)
         .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
+    println!("Added successfully");
 
     // Save the config file
-    hypr.config_mut()
+    println!("Saving config files...");
+    let saved_files = hypr.config_mut()
         .save_all()
         .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+    println!("Saved files: {:?}", saved_files);
 
     Ok(())
 }
@@ -1151,6 +1160,406 @@ pub fn save_monitor_settings(
         .map_err(|e| format!("Failed to add monitor config: {:?}", e))?;
 
     // Save the config file
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+
+    Ok(())
+}
+
+// ==================== BINDU HANDLERS (Universal Submap Bindings) ====================
+
+#[tauri::command]
+pub fn get_all_bindu() -> Result<Vec<Keybind>, String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    let bindus = hypr.all_bindu();
+    let mut keybinds = Vec::new();
+
+    for bind_str in bindus {
+        let parts: Vec<&str> = bind_str.split(',').map(|s| s.trim()).collect();
+
+        if parts.len() >= 3 {
+            let mods_str = parts[0];
+            let key = parts[1].to_string();
+            let dispatcher = parts[2].to_string();
+            let params = if parts.len() > 3 {
+                parts[3..].join(", ")
+            } else {
+                String::new()
+            };
+
+            let modifiers: Vec<String> = mods_str
+                .split(|c: char| c.is_whitespace() || c == '_')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+
+            keybinds.push(Keybind {
+                modifiers,
+                key,
+                dispatcher,
+                params,
+            });
+        }
+    }
+
+    Ok(keybinds)
+}
+
+#[tauri::command]
+pub fn add_bindu(
+    modifiers: Vec<String>,
+    key: String,
+    dispatcher: String,
+    params: String,
+) -> Result<(), String> {
+    if key.trim().is_empty() {
+        return Err("Key is required".to_string());
+    }
+
+    if dispatcher.trim().is_empty() {
+        return Err("Dispatcher is required".to_string());
+    }
+
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    let mods_str = if modifiers.is_empty() {
+        String::new()
+    } else {
+        modifiers.join(" ")
+    };
+
+    let bind_args = if mods_str.is_empty() {
+        format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
+    } else {
+        format!(
+            "{}, {}, {}, {}",
+            mods_str,
+            key.trim(),
+            dispatcher.trim(),
+            params.trim()
+        )
+    };
+
+    hypr.config_mut()
+        .add_handler_call("bindu", bind_args)
+        .map_err(|e| format!("Failed to add bindu: {:?}", e))?;
+
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_bindu(index: usize) -> Result<(), String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    hypr.config_mut()
+        .remove_handler_call("bindu", index)
+        .map_err(|e| format!("Failed to remove bindu at index {}: {:?}", index, e))?;
+
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+
+    Ok(())
+}
+
+// ==================== WINDOWRULE V3 HANDLERS ====================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowruleProperty {
+    pub key: String,
+    pub value: String,
+    pub property_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Windowrule {
+    pub name: String,
+    pub match_properties: Vec<WindowruleProperty>,
+    pub effect_properties: Vec<WindowruleProperty>,
+}
+
+const WINDOWRULE_MATCH_PROPERTIES: &[&str] = &[
+    "class", "title", "initial_class", "initial_title", "floating", "tag",
+    "xwayland", "fullscreen", "pinned", "focus", "group", "modal",
+    "fullscreenstate_internal", "fullscreenstate_client", "on_workspace",
+    "content", "xdg_tag", "namespace", "exec_token",
+    // Aliases
+    "float", "pin", "workspace", "fullscreen_state_internal", "fullscreen_state_client",
+];
+
+const WINDOWRULE_EFFECT_PROPERTIES: &[&str] = &[
+    "float", "tile", "fullscreen", "maximize", "fullscreenstate", "move", "size",
+    "center", "pseudo", "monitor", "workspace", "noinitialfocus", "pin", "group",
+    "suppressevent", "content", "noclosefor", "rounding", "rounding_power",
+    "persistent_size", "animation", "border_color", "bordercolor", "idle_inhibit",
+    "idleinhibit", "opacity", "tag", "max_size", "maxsize", "min_size", "minsize",
+    "border_size", "bordersize", "allows_input", "dim_around", "decorate",
+    "focus_on_activate", "keep_aspect_ratio", "keepaspectratio", "nearest_neighbor",
+    "nearestneighbor", "no_anim", "noanim", "no_blur", "noblur", "no_dim", "nodim",
+    "no_focus", "nofocus", "no_follow_mouse", "nofollowmouse", "no_max_size",
+    "nomaxsize", "no_shadow", "noshadow", "no_shortcuts_inhibit", "noshortcutsinhibit",
+    "opaque", "force_rgbx", "forcergbx", "sync_fullscreen", "syncfullscreen",
+    "immediate", "xray", "render_unfocused", "renderunfocused", "no_screen_share",
+    "noscreenshare", "no_vrr", "novrr", "scroll_mouse", "scrollmouse",
+    "scroll_touchpad", "scrolltouchpad", "stay_focused", "stayfocused",
+    // Aliases
+    "fullscreen_state", "no_initial_focus", "suppress_event", "no_close_for",
+];
+
+#[tauri::command]
+pub fn get_windowrule_names() -> Result<Vec<String>, String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    Ok(hypr.windowrule_names())
+}
+
+#[tauri::command]
+pub fn get_windowrule(name: String) -> Result<Windowrule, String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    let rule = hypr
+        .get_windowrule(&name)
+        .map_err(|e| format!("Windowrule '{}' not found: {:?}", name, e))?;
+
+    let mut match_properties = Vec::new();
+    let mut effect_properties = Vec::new();
+
+    // Collect match properties
+    for prop in WINDOWRULE_MATCH_PROPERTIES {
+        if let Ok(value) = rule.get_string(&format!("match:{}", prop)) {
+            if !value.is_empty() {
+                match_properties.push(WindowruleProperty {
+                    key: prop.to_string(),
+                    value,
+                    property_type: "match".to_string(),
+                });
+            }
+        }
+    }
+
+    // Collect effect properties
+    for prop in WINDOWRULE_EFFECT_PROPERTIES {
+        if let Ok(value) = rule.get_string(prop) {
+            if !value.is_empty() {
+                effect_properties.push(WindowruleProperty {
+                    key: prop.to_string(),
+                    value,
+                    property_type: "effect".to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(Windowrule {
+        name,
+        match_properties,
+        effect_properties,
+    })
+}
+
+#[tauri::command]
+pub fn delete_windowrule(name: String) -> Result<(), String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    hypr.config_mut()
+        .remove_special_category_instance("windowrule", &name)
+        .map_err(|e| format!("Failed to delete windowrule '{}': {:?}", name, e))?;
+
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+
+    Ok(())
+}
+
+// ==================== LAYERRULE V2 HANDLERS ====================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LayerruleProperty {
+    pub key: String,
+    pub value: String,
+    pub property_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Layerrule {
+    pub name: String,
+    pub match_properties: Vec<LayerruleProperty>,
+    pub effect_properties: Vec<LayerruleProperty>,
+}
+
+const LAYERRULE_MATCH_PROPERTIES: &[&str] = &[
+    "namespace", "address", "class", "title", "monitor", "layer",
+];
+
+const LAYERRULE_EFFECT_PROPERTIES: &[&str] = &[
+    "blur", "blur_popups", "ignorealpha", "ignore_alpha", "ignorezero",
+    "animation", "noanim", "no_anim", "xray", "dim_around", "order",
+    "above_lock", "no_screen_share", "noscreenshare",
+];
+
+#[tauri::command]
+pub fn get_layerrule_names() -> Result<Vec<String>, String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    Ok(hypr.layerrule_names())
+}
+
+#[tauri::command]
+pub fn get_layerrule(name: String) -> Result<Layerrule, String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    let rule = hypr
+        .get_layerrule(&name)
+        .map_err(|e| format!("Layerrule '{}' not found: {:?}", name, e))?;
+
+    let mut match_properties = Vec::new();
+    let mut effect_properties = Vec::new();
+
+    for prop in LAYERRULE_MATCH_PROPERTIES {
+        if let Ok(value) = rule.get_string(&format!("match:{}", prop)) {
+            if !value.is_empty() {
+                match_properties.push(LayerruleProperty {
+                    key: prop.to_string(),
+                    value,
+                    property_type: "match".to_string(),
+                });
+            }
+        }
+    }
+
+    for prop in LAYERRULE_EFFECT_PROPERTIES {
+        if let Ok(value) = rule.get_string(prop) {
+            if !value.is_empty() {
+                effect_properties.push(LayerruleProperty {
+                    key: prop.to_string(),
+                    value,
+                    property_type: "effect".to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(Layerrule {
+        name,
+        match_properties,
+        effect_properties,
+    })
+}
+
+#[tauri::command]
+pub fn delete_layerrule(name: String) -> Result<(), String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    hypr.config_mut()
+        .remove_special_category_instance("layerrule", &name)
+        .map_err(|e| format!("Failed to delete layerrule '{}': {:?}", name, e))?;
+
     hypr.config_mut()
         .save_all()
         .map_err(|e| format!("Failed to save config files: {:?}", e))?;

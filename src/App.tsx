@@ -11,8 +11,10 @@ import Appearance from "@/pages/Appearance";
 import Displays from "@/pages/Displays";
 import General from "@/pages/General";
 import Keybinds from "@/pages/Keybinds";
+import Layerrules from "@/pages/Layerrules";
 import Network from "@/pages/Network";
 import Variables from "@/pages/Variables";
+import Windowrules from "@/pages/Windowrules";
 import { loadTheme } from "@/lib/theme-loader";
 
 function App() {
@@ -37,6 +39,10 @@ function App() {
 				return <Keybinds />;
 			case "variables":
 				return <Variables />;
+			case "windowrules":
+				return <Windowrules />;
+			case "layerrules":
+				return <Layerrules />;
 			case "about":
 				return <About />;
 			default:

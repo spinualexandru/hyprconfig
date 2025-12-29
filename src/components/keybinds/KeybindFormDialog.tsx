@@ -24,6 +24,7 @@ interface KeybindFormDialogProps {
   onOpenChange: (open: boolean) => void;
   editingKeybind?: { keybind: Keybind; index: number } | null;
   onSuccess: () => void;
+  isBindu?: boolean;
 }
 
 export function KeybindFormDialog({
@@ -31,6 +32,7 @@ export function KeybindFormDialog({
   onOpenChange,
   editingKeybind,
   onSuccess,
+  isBindu = false,
 }: KeybindFormDialogProps) {
   const [formModifiers, setFormModifiers] = useState<string[]>([]);
   const [formKey, setFormKey] = useState("");
@@ -98,8 +100,14 @@ export function KeybindFormDialog({
     setFormLoading(true);
     setFormError(null);
 
-    const command = editingKeybind ? "edit_keybind" : "add_keybind";
-    const args = editingKeybind
+    // Bindu only supports add (no edit command), regular keybinds support both
+    const command = isBindu
+      ? "add_bindu"
+      : editingKeybind
+        ? "edit_keybind"
+        : "add_keybind";
+
+    const args = !isBindu && editingKeybind
       ? {
           index: editingKeybind.index,
           modifiers: formModifiers,
@@ -133,12 +141,18 @@ export function KeybindFormDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {editingKeybind ? "Edit Keybind" : "Add New Keybind"}
+            {isBindu
+              ? "Add Universal Bind"
+              : editingKeybind
+                ? "Edit Keybind"
+                : "Add New Keybind"}
           </DialogTitle>
           <DialogDescription>
-            {editingKeybind
-              ? "Modify the keybind settings below."
-              : "Create a new keyboard shortcut for Hyprland."}
+            {isBindu
+              ? "Create a keybind that works across all submaps."
+              : editingKeybind
+                ? "Modify the keybind settings below."
+                : "Create a new keyboard shortcut for Hyprland."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
@@ -233,12 +247,12 @@ export function KeybindFormDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={formLoading}>
             {formLoading
-              ? editingKeybind
-                ? "Saving..."
-                : "Adding..."
-              : editingKeybind
-                ? "Save Changes"
-                : "Add Keybind"}
+              ? "Adding..."
+              : isBindu
+                ? "Add Universal Bind"
+                : editingKeybind
+                  ? "Save Changes"
+                  : "Add Keybind"}
           </Button>
         </DialogFooter>
       </DialogContent>
