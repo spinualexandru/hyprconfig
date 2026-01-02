@@ -1,9 +1,10 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod audio_backend;
+mod config_backend;
 mod hyprland_backend;
 mod hyprpaper_backend;
 mod os_backend;
-mod config_backend;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -45,6 +46,10 @@ fn main() {
             config_backend::update_matugen_preferences,
             config_backend::get_theme_css,
             config_backend::ensure_matugen_template,
+            audio_backend::get_audio_state,
+            audio_backend::set_default_device,
+            audio_backend::set_volume,
+            audio_backend::set_mute,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

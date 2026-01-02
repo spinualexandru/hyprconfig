@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/sidebar";
 import About from "@/pages/About";
 import Appearance from "@/pages/Appearance";
+import Audio from "@/pages/Audio";
 import Displays from "@/pages/Displays";
 import General from "@/pages/General";
 import Keybinds from "@/pages/Keybinds";
@@ -33,6 +34,8 @@ function App() {
 				return <Appearance />;
 			case "network":
 				return <Network />;
+			case "audio":
+				return <Audio />;
 			case "displays":
 				return <Displays />;
 			case "keybinds":
