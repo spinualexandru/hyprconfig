@@ -1,4 +1,4 @@
-import { AppWindow, DollarSign, Info, Keyboard, Layers, Monitor, Moon, Palette, Settings, Sun, Wifi } from "lucide-react";
+import { AppWindow, DollarSign, Info, Keyboard, Layers, Monitor, Moon, Palette, Settings, Sun, Volume2, Wifi } from "lucide-react";
 import type * as React from "react";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -28,6 +28,11 @@ const navItems = [
     title: "Network",
     id: "network",
     icon: Wifi,
+  },
+  {
+    title: "Audio",
+    id: "audio",
+    icon: Volume2,
   },
   {
     title: "Displays",
