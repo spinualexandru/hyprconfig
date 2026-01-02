@@ -140,7 +140,6 @@ fn parse_stream_line(line: &str) -> Option<AudioStream> {
 }
 
 /// Get streams using pactl (PulseAudio compatibility layer)
-/// This is more reliable than wpctl for detecting application streams
 fn get_pactl_streams() -> Vec<AudioStream> {
     let output = match Command::new("pactl").args(["list", "sink-inputs"]).output() {
         Ok(o) if o.status.success() => o,
@@ -211,6 +210,107 @@ fn get_pactl_streams() -> Vec<AudioStream> {
     if let Some(stream) = current_stream {
         if !stream.app_name.is_empty() {
             streams.push(stream);
+        }
+    }
+
+    streams
+}
+
+/// Get audio streams using pw-dump (works for JACK clients and all PipeWire nodes)
+fn get_pw_dump_streams(sink_ids: &[u32], source_ids: &[u32]) -> Vec<AudioStream> {
+    let output = match Command::new("pw-dump").output() {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = match serde_json::from_str(&stdout) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut streams = Vec::new();
+
+    if let Some(array) = json.as_array() {
+        for obj in array {
+            // Check if it's a Node type
+            let node_type = obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            if node_type != "PipeWire:Interface:Node" {
+                continue;
+            }
+
+            let id = obj.get("id").and_then(|i| i.as_u64()).unwrap_or(0) as u32;
+
+            // Skip if this is a sink or source device (we already show those)
+            if sink_ids.contains(&id) || source_ids.contains(&id) {
+                continue;
+            }
+
+            let info = match obj.get("info") {
+                Some(i) => i,
+                None => continue,
+            };
+
+            let props = match info.get("props") {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // Check if this is an audio node
+            let media_type = props.get("media.type").and_then(|m| m.as_str()).unwrap_or("");
+            let media_class = props.get("media.class").and_then(|m| m.as_str()).unwrap_or("");
+
+            // Skip non-audio nodes
+            if media_type != "Audio" && !media_class.contains("Audio") {
+                continue;
+            }
+
+            // Skip device sinks/sources (we show those separately)
+            if media_class == "Audio/Sink" || media_class == "Audio/Source" {
+                continue;
+            }
+
+            // Get application/client name
+            let app_name = props
+                .get("application.name")
+                .or_else(|| props.get("client.name"))
+                .or_else(|| props.get("node.description"))
+                .or_else(|| props.get("node.name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Skip if no name or if it's a system node
+            if app_name.is_empty()
+                || app_name.contains("Dummy")
+                || app_name.contains("Freewheel")
+                || app_name.contains("Midi")
+            {
+                continue;
+            }
+
+            // Check if running/idle (active)
+            let state = info.get("state").and_then(|s| s.as_str()).unwrap_or("");
+            if state != "running" && state != "idle" {
+                continue;
+            }
+
+            // Get media name if available
+            let media_name = props
+                .get("media.name")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
+
+            // Get volume from wpctl
+            let (volume, muted) = get_node_volume(id).unwrap_or((1.0, false));
+
+            streams.push(AudioStream {
+                id,
+                app_name,
+                media_name,
+                volume,
+                muted,
+            });
         }
     }
 
@@ -329,11 +429,23 @@ pub fn get_audio_state() -> Result<AudioState, String> {
         }
     }
 
-    // If wpctl didn't find streams, try pactl (more reliable for app streams)
+    // Collect device IDs to exclude from streams
+    let sink_ids: Vec<u32> = sinks.iter().map(|s| s.id).collect();
+    let source_ids: Vec<u32> = sources.iter().map(|s| s.id).collect();
+
+    // If wpctl didn't find streams, try other methods
     if streams.is_empty() {
+        // Try pactl first (PulseAudio compatibility)
         streams = get_pactl_streams();
-    } else {
-        // Update wpctl streams with volume info
+    }
+
+    // If still no streams, try pw-dump (works for JACK clients like Firefox)
+    if streams.is_empty() {
+        streams = get_pw_dump_streams(&sink_ids, &source_ids);
+    }
+
+    // Update wpctl streams with volume info if we got them from wpctl
+    if !streams.is_empty() && streams.iter().all(|s| s.volume == 0.0) {
         for stream in &mut streams {
             if let Ok((vol, muted)) = get_node_volume(stream.id) {
                 stream.volume = vol;
