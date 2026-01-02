@@ -139,6 +139,84 @@ fn parse_stream_line(line: &str) -> Option<AudioStream> {
     })
 }
 
+/// Get streams using pactl (PulseAudio compatibility layer)
+/// This is more reliable than wpctl for detecting application streams
+fn get_pactl_streams() -> Vec<AudioStream> {
+    let output = match Command::new("pactl").args(["list", "sink-inputs"]).output() {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut streams = Vec::new();
+    let mut current_stream: Option<AudioStream> = None;
+
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+
+        // New sink input starts
+        if trimmed.starts_with("Sink Input #") {
+            // Save previous stream if exists
+            if let Some(stream) = current_stream.take() {
+                if !stream.app_name.is_empty() {
+                    streams.push(stream);
+                }
+            }
+            // Parse ID from "Sink Input #123"
+            if let Some(id_str) = trimmed.strip_prefix("Sink Input #") {
+                if let Ok(id) = id_str.parse::<u32>() {
+                    current_stream = Some(AudioStream {
+                        id,
+                        app_name: String::new(),
+                        media_name: None,
+                        volume: 1.0,
+                        muted: false,
+                    });
+                }
+            }
+        } else if let Some(ref mut stream) = current_stream {
+            // Parse properties
+            if trimmed.starts_with("Volume:") {
+                // Format: "Volume: front-left: 65536 / 100% / 0.00 dB, ..."
+                if let Some(pct_start) = trimmed.find('/') {
+                    let after_slash = &trimmed[pct_start + 1..];
+                    if let Some(pct_end) = after_slash.find('%') {
+                        if let Ok(pct) = after_slash[..pct_end].trim().parse::<f32>() {
+                            stream.volume = pct / 100.0;
+                        }
+                    }
+                }
+            } else if trimmed.starts_with("Mute:") {
+                stream.muted = trimmed.contains("yes");
+            } else if trimmed.starts_with("application.name = ") {
+                stream.app_name = trimmed
+                    .strip_prefix("application.name = ")
+                    .unwrap_or("")
+                    .trim_matches('"')
+                    .to_string();
+            } else if trimmed.starts_with("media.name = ") {
+                let media = trimmed
+                    .strip_prefix("media.name = ")
+                    .unwrap_or("")
+                    .trim_matches('"')
+                    .to_string();
+                if !media.is_empty() {
+                    stream.media_name = Some(media);
+                }
+            }
+        }
+    }
+
+    // Don't forget the last stream
+    if let Some(stream) = current_stream {
+        if !stream.app_name.is_empty() {
+            streams.push(stream);
+        }
+    }
+
+    streams
+}
+
 #[tauri::command]
 pub fn get_audio_state() -> Result<AudioState, String> {
     check_wpctl_available()?;
@@ -236,7 +314,7 @@ pub fn get_audio_state() -> Result<AudioState, String> {
         }
     }
 
-    // Fetch actual volume for each device and stream
+    // Fetch actual volume for each device
     for sink in &mut sinks {
         if let Ok((vol, muted)) = get_node_volume(sink.id) {
             sink.volume = vol;
@@ -251,10 +329,16 @@ pub fn get_audio_state() -> Result<AudioState, String> {
         }
     }
 
-    for stream in &mut streams {
-        if let Ok((vol, muted)) = get_node_volume(stream.id) {
-            stream.volume = vol;
-            stream.muted = muted;
+    // If wpctl didn't find streams, try pactl (more reliable for app streams)
+    if streams.is_empty() {
+        streams = get_pactl_streams();
+    } else {
+        // Update wpctl streams with volume info
+        for stream in &mut streams {
+            if let Ok((vol, muted)) = get_node_volume(stream.id) {
+                stream.volume = vol;
+                stream.muted = muted;
+            }
         }
     }
 
@@ -286,44 +370,67 @@ pub fn set_default_device(device_id: u32) -> Result<(), String> {
 
 #[tauri::command]
 pub fn set_volume(node_id: u32, volume: f32) -> Result<(), String> {
-    check_wpctl_available()?;
-
     // Clamp volume to reasonable range (0.0 - 1.5 for 150% boost)
     let vol = volume.clamp(0.0, 1.5);
-    let vol_str = format!("{:.2}", vol);
 
-    let output = Command::new("wpctl")
-        .args(["set-volume", &node_id.to_string(), &vol_str])
-        .output()
-        .map_err(|e| format!("Failed to set volume: {}", e))?;
+    // Try wpctl first
+    let wpctl_result = Command::new("wpctl")
+        .args(["set-volume", &node_id.to_string(), &format!("{:.2}", vol)])
+        .output();
 
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
+    if let Ok(output) = wpctl_result {
+        if output.status.success() {
+            return Ok(());
+        }
+    }
+
+    // If wpctl fails, try pactl (for sink-input streams)
+    let pct = (vol * 100.0).round() as u32;
+    let pactl_result = Command::new("pactl")
+        .args([
+            "set-sink-input-volume",
+            &node_id.to_string(),
+            &format!("{}%", pct),
+        ])
+        .output();
+
+    match pactl_result {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => Err(format!(
             "Failed to set volume: {}",
             String::from_utf8_lossy(&output.stderr)
-        ))
+        )),
+        Err(e) => Err(format!("Failed to set volume: {}", e)),
     }
 }
 
 #[tauri::command]
 pub fn set_mute(node_id: u32, muted: bool) -> Result<(), String> {
-    check_wpctl_available()?;
-
     let mute_val = if muted { "1" } else { "0" };
 
-    let output = Command::new("wpctl")
+    // Try wpctl first
+    let wpctl_result = Command::new("wpctl")
         .args(["set-mute", &node_id.to_string(), mute_val])
-        .output()
-        .map_err(|e| format!("Failed to set mute: {}", e))?;
+        .output();
 
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
+    if let Ok(output) = wpctl_result {
+        if output.status.success() {
+            return Ok(());
+        }
+    }
+
+    // If wpctl fails, try pactl (for sink-input streams)
+    let pactl_mute = if muted { "1" } else { "0" };
+    let pactl_result = Command::new("pactl")
+        .args(["set-sink-input-mute", &node_id.to_string(), pactl_mute])
+        .output();
+
+    match pactl_result {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => Err(format!(
             "Failed to set mute state: {}",
             String::from_utf8_lossy(&output.stderr)
-        ))
+        )),
+        Err(e) => Err(format!("Failed to set mute: {}", e)),
     }
 }

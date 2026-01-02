@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Mic, RefreshCw, Volume2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AudioDeviceCard } from "@/components/audio/AudioDeviceCard";
 import { AudioSectionSkeleton } from "@/components/audio/AudioSkeletons";
 import { AudioStreamCard } from "@/components/audio/AudioStreamCard";
@@ -22,30 +22,27 @@ export default function Audio() {
 		new Map(),
 	);
 
-	const loadAudioState = useCallback(async () => {
+	const loadAudioState = async () => {
 		setLoading(true);
 		setError(null);
 
-		invoke<AudioState>("get_audio_state")
-			.then((result) => {
-				setAudioState(result);
-				setCachedAudioState(result);
-			})
-			.catch((err) => {
-				setError(err as string);
-				if (!cachedAudioState) {
-					setAudioState(null);
-				}
-			})
-			.finally(() => {
-				setLoading(false);
-				setInitialLoad(false);
-			});
-	}, [cachedAudioState]);
+		try {
+			const result = await invoke<AudioState>("get_audio_state");
+			setAudioState(result);
+			setCachedAudioState(result);
+		} catch (err) {
+			setError(err as string);
+			// Keep cached state on error
+		} finally {
+			setLoading(false);
+			setInitialLoad(false);
+		}
+	};
 
 	useEffect(() => {
 		loadAudioState();
-	}, [loadAudioState]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	// Cleanup timers on unmount
 	useEffect(() => {
