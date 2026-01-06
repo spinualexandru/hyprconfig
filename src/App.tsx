@@ -15,6 +15,7 @@ import Keybinds from "@/pages/Keybinds";
 import Layerrules from "@/pages/Layerrules";
 import Network from "@/pages/Network";
 import Variables from "@/pages/Variables";
+import EnvVars from "@/pages/EnvVars";
 import Windowrules from "@/pages/Windowrules";
 import { loadTheme } from "@/lib/theme-loader";
 
@@ -42,6 +43,8 @@ function App() {
 				return <Keybinds />;
 			case "variables":
 				return <Variables />;
+			case "envvars":
+				return <EnvVars />;
 			case "windowrules":
 				return <Windowrules />;
 			case "layerrules":
