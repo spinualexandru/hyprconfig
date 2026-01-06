@@ -37,13 +37,19 @@ pnpm tauri dev -- --bin tauri-app
 - [ ] Startup Services
 - [ ] System level environment variables
 - [ ] Userspace environment variables
-- [ ] Hyprland level environment variables
+- [x] Hyprland level environment variables
 - [ ] User details
 - [ ] User groups details
 - [ ] Group creation
 - [ ] Add user to groups
 - [ ] Remove user from groups
 - [ ] Change Password
+
+### Environment Variables (Hyprland)
+- [x] Display environment variables
+- [x] Edit environment variables inline ( Excel like )
+- [x] Add environment variables
+- [x] Delete environment variables
 
 ### Keybinds
 
@@ -75,7 +81,7 @@ pnpm tauri dev -- --bin tauri-app
     - [x] Display active workspace
 - [x] Add options to change resolution and refresh rate
     - [x] Create a list of available modes
-    - [ ] Add confirmation dialog
+    - [x] Add confirmation dialog
 - [ ] Add options to change position
 - [ ] Add options to change scale
     - [ ] Create a slider for scale
@@ -123,13 +129,13 @@ pnpm tauri dev -- --bin tauri-app
 
 ### Audio
 
-- [ ] Integrate pipeline connector
-- [ ] Display Audio Controllers
-- [ ] Volume Modifier
-- [ ] Mute / Unmute
+- [x] Integrate pipeline connector
+- [x] Display Audio Controllers
+- [x] Volume Modifier
+- [x] Mute / Unmute
 - [ ] Change primary audio source
 - [ ] Change bitrate
-- [ ] Display per application volume modifier
+- [x] Display per application volume modifier
 
 ### About
 - [x] Add about page
