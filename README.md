@@ -18,6 +18,12 @@ Configure hyprland using a GUI.
 pnpm tauri dev -- --bin tauri-app
 ```
 
+## Installation (system-wide)
+
+```
+pnpm install
+```
+
 ## Roadmap/Features
 
 ### Appearance
