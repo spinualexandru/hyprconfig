@@ -1,4 +1,4 @@
-import { AppWindow, DollarSign, Info, Keyboard, Layers, Monitor, Moon, Palette, Settings, Sun, Volume2, Wifi } from "lucide-react";
+import { AppWindow, DollarSign, Info, Keyboard, Layers, Monitor, Moon, Palette, Settings, Sun, Terminal, Volume2, Wifi } from "lucide-react";
 import type * as React from "react";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -48,6 +48,11 @@ const navItems = [
     title: "Variables",
     id: "variables",
     icon: DollarSign,
+  },
+  {
+    title: "Env Vars",
+    id: "envvars",
+    icon: Terminal,
   },
   {
     title: "Windowrules",

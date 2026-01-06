@@ -899,6 +899,177 @@ pub fn delete_variable(name: String) -> Result<(), String> {
     Ok(())
 }
 
+// ============================================================================
+// Environment Variables (env = NAME,value handler calls)
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EnvVar {
+    pub name: String,
+    pub value: String,
+    pub index: usize,
+    pub source_file: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_env_vars() -> Result<Vec<EnvVar>, String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    let hypr_dir = config_path.parent().unwrap();
+
+    // Get all "env" handler calls
+    let envs = hypr
+        .config()
+        .all_handler_calls()
+        .get("env")
+        .cloned()
+        .unwrap_or_else(Vec::new);
+
+    let mut env_vars = Vec::new();
+
+    for (index, env_str) in envs.iter().enumerate() {
+        // Parse "NAME,value" format - split on first comma only
+        if let Some(comma_pos) = env_str.find(',') {
+            let name = env_str[..comma_pos].trim().to_string();
+            let value = env_str[comma_pos + 1..].trim().to_string();
+
+            // Get source file for this env entry
+            let source_file = hypr
+                .config()
+                .get_key_source_file(&format!("env:{}", index))
+                .map(|p| {
+                    p.strip_prefix(hypr_dir)
+                        .unwrap_or(p)
+                        .display()
+                        .to_string()
+                });
+
+            env_vars.push(EnvVar {
+                name,
+                value,
+                index,
+                source_file,
+            });
+        }
+    }
+
+    // Sort by name for consistent display
+    env_vars.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Ok(env_vars)
+}
+
+#[tauri::command]
+pub fn add_env_var(name: String, value: String) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Environment variable name cannot be empty".to_string());
+    }
+
+    // Env var names: letters, numbers, underscores
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(
+            "Environment variable name must contain only letters, numbers, and underscores"
+                .to_string(),
+        );
+    }
+
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Format: NAME,value
+    let env_args = format!("{},{}", name, value);
+
+    hypr.config_mut()
+        .add_handler_call("env", env_args)
+        .map_err(|e| format!("Failed to add env var: {:?}", e))?;
+
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn edit_env_var(index: usize, name: String, value: String) -> Result<(), String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    // Remove old env var at index
+    hypr.config_mut()
+        .remove_handler_call("env", index)
+        .map_err(|e| format!("Failed to remove env var at index {}: {:?}", index, e))?;
+
+    // Add new env var
+    let env_args = format!("{},{}", name, value);
+    hypr.config_mut()
+        .add_handler_call("env", env_args)
+        .map_err(|e| format!("Failed to add env var: {:?}", e))?;
+
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_env_var(index: usize) -> Result<(), String> {
+    let config_path = get_hyprland_config_path()?;
+
+    if !config_path.exists() {
+        return Err(format!(
+            "Hyprland config file not found at {:?}",
+            config_path
+        ));
+    }
+
+    let mut hypr = Hyprland::new();
+    hypr.parse_file(&config_path)
+        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
+
+    hypr.config_mut()
+        .remove_handler_call("env", index)
+        .map_err(|e| format!("Failed to remove env var at index {}: {:?}", index, e))?;
+
+    hypr.config_mut()
+        .save_all()
+        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn add_keybind(
     modifiers: Vec<String>,

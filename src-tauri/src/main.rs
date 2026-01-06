@@ -18,6 +18,11 @@ fn main() {
             hyprland_backend::set_variable,
             hyprland_backend::add_variable,
             hyprland_backend::delete_variable,
+            // env var handlers
+            hyprland_backend::get_env_vars,
+            hyprland_backend::add_env_var,
+            hyprland_backend::edit_env_var,
+            hyprland_backend::delete_env_var,
             hyprland_backend::add_keybind,
             hyprland_backend::edit_keybind,
             hyprland_backend::delete_keybind,
