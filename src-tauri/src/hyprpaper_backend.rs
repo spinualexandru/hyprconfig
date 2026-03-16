@@ -1,5 +1,5 @@
 use hyprland::dispatch::DispatchType;
-use hyprlang::{Config, SpecialCategoryDescriptor};
+use hyprlang::{Config, ConfigValue, SpecialCategoryDescriptor};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -16,15 +16,27 @@ pub struct HyprpaperConfig {
     pub wallpapers: Vec<Wallpaper>,
 }
 
+fn expand_tilde(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}/{}", home, rest);
+        }
+    }
+    path.to_string()
+}
+
 fn register_hyprpaper_config(config: &mut Config) {
     // Register hyprpaper-specific keywords as handlers
-    let keywords = vec!["splash", "splash_offset", "splash_opacity", "ipc"];
+    let keywords = vec!["preload", "splash", "splash_offset", "splash_opacity", "ipc"];
     for keyword in keywords {
         config.register_handler_fn(keyword, |_ctx| Ok(()));
     }
 
-    // Register wallpaper as anonymous special category
+    // Register wallpaper as anonymous special category with its properties
     config.register_special_category(SpecialCategoryDescriptor::anonymous("wallpaper"));
+    config.register_special_category_value("wallpaper", "monitor", ConfigValue::String(String::new()));
+    config.register_special_category_value("wallpaper", "path", ConfigValue::String(String::new()));
+    config.register_special_category_value("wallpaper", "fit_mode", ConfigValue::String("cover".to_string()));
 }
 
 #[tauri::command]
@@ -60,11 +72,12 @@ pub fn get_hyprpaper_config() -> Result<HyprpaperConfig, String> {
                 .and_then(|v| v.as_string().ok())
                 .unwrap_or("")
                 .to_string();
-            let path = instance
-                .get("path")
-                .and_then(|v| v.as_string().ok())
-                .unwrap_or("")
-                .to_string();
+            let path = expand_tilde(
+                instance
+                    .get("path")
+                    .and_then(|v| v.as_string().ok())
+                    .unwrap_or(""),
+            );
             let fit_mode = instance
                 .get("fit_mode")
                 .and_then(|v| v.as_string().ok())

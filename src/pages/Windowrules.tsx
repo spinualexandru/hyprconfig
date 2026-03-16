@@ -92,6 +92,11 @@ function WindowruleCard({ name, onDelete }: WindowruleCardProps) {
             <ChevronRight className="h-4 w-4" />
           )}
           <code className="text-sm font-mono">{name}</code>
+          {rule && !rule.enabled && (
+            <Badge variant="secondary" className="ml-2 text-muted-foreground">
+              disabled
+            </Badge>
+          )}
         </Button>
         <Button
           size="icon"

@@ -1484,6 +1484,7 @@ pub struct WindowruleProperty {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Windowrule {
     pub name: String,
+    pub enabled: bool,
     pub match_properties: Vec<WindowruleProperty>,
     pub effect_properties: Vec<WindowruleProperty>,
 }
@@ -1553,6 +1554,8 @@ pub fn get_windowrule(name: String) -> Result<Windowrule, String> {
         .get_windowrule(&name)
         .map_err(|e| format!("Windowrule '{}' not found: {:?}", name, e))?;
 
+    let enabled = rule.get_int("enable").unwrap_or(1) != 0;
+
     let mut match_properties = Vec::new();
     let mut effect_properties = Vec::new();
 
@@ -1584,6 +1587,7 @@ pub fn get_windowrule(name: String) -> Result<Windowrule, String> {
 
     Ok(Windowrule {
         name,
+        enabled,
         match_properties,
         effect_properties,
     })
@@ -1627,6 +1631,7 @@ pub struct LayerruleProperty {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Layerrule {
     pub name: String,
+    pub enabled: bool,
     pub match_properties: Vec<LayerruleProperty>,
     pub effect_properties: Vec<LayerruleProperty>,
 }
@@ -1678,6 +1683,8 @@ pub fn get_layerrule(name: String) -> Result<Layerrule, String> {
         .get_layerrule(&name)
         .map_err(|e| format!("Layerrule '{}' not found: {:?}", name, e))?;
 
+    let enabled = rule.get_int("enable").unwrap_or(1) != 0;
+
     let mut match_properties = Vec::new();
     let mut effect_properties = Vec::new();
 
@@ -1707,6 +1714,7 @@ pub fn get_layerrule(name: String) -> Result<Layerrule, String> {
 
     Ok(Layerrule {
         name,
+        enabled,
         match_properties,
         effect_properties,
     })
