@@ -6,6 +6,7 @@ export interface LayerruleProperty {
 
 export interface Layerrule {
   name: string;
+  enabled: boolean;
   match_properties: LayerruleProperty[];
   effect_properties: LayerruleProperty[];
 }
@@ -20,20 +21,22 @@ export const LAYERRULE_MATCH_PROPERTIES = [
   "layer",
 ] as const;
 
-// Effect properties for layerrule v2
+// Effect properties for layerrule v2 (synced with hyprlang-rs 0.5.0)
 export const LAYERRULE_EFFECT_PROPERTIES = [
   "blur",
-  "blurpopups",
+  "blur_popups",
   "ignorealpha",
+  "ignore_alpha",
   "ignorezero",
-  "dimaround",
-  "xray",
   "animation",
+  "noanim",
+  "no_anim",
+  "xray",
+  "dim_around",
   "order",
-  "abovelock",
-  "noscreenshot",
+  "above_lock",
+  "no_screen_share",
   "noscreenshare",
-  "noshadow",
 ] as const;
 
 export type LayerruleMatchProperty = typeof LAYERRULE_MATCH_PROPERTIES[number];

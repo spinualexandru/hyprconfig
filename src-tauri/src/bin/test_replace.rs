@@ -1,11 +1,16 @@
 use std::path::Path;
-use hyprlang::Config;
+use hyprlang::{Config, ConfigValue, SpecialCategoryDescriptor};
 
-fn register_hyprpaper_handlers(config: &mut Config) {
-    let keywords = vec!["preload", "wallpaper", "splash", "ipc"];
+fn register_hyprpaper_config(config: &mut Config) {
+    let keywords = vec!["preload", "splash", "splash_offset", "splash_opacity", "ipc"];
     for keyword in keywords {
         config.register_handler_fn(keyword, |_ctx| Ok(()));
     }
+
+    config.register_special_category(SpecialCategoryDescriptor::anonymous("wallpaper"));
+    config.register_special_category_value("wallpaper", "monitor", ConfigValue::String(String::new()));
+    config.register_special_category_value("wallpaper", "path", ConfigValue::String(String::new()));
+    config.register_special_category_value("wallpaper", "fit_mode", ConfigValue::String("cover".to_string()));
 }
 
 fn main() {
@@ -19,39 +24,36 @@ fn main() {
 
     println!("=== BEFORE REPLACEMENT ===");
     let mut config = Config::new();
-    register_hyprpaper_handlers(&mut config);
+    register_hyprpaper_config(&mut config);
     config.parse_file(&config_path).expect("Failed to parse");
 
     let all_handlers = config.all_handler_calls();
     println!("Preloads: {:?}", all_handlers.get("preload"));
-    println!("Wallpapers: {:?}", all_handlers.get("wallpaper"));
 
-    // Get counts
-    let preload_count = all_handlers.get("preload").map(|v| v.len()).unwrap_or(0);
-    let wallpaper_count = all_handlers.get("wallpaper").map(|v| v.len()).unwrap_or(0);
-
-    println!("\nRemoving {} preloads and {} wallpapers...", preload_count, wallpaper_count);
+    let wallpaper_keys = config.list_special_category_keys("wallpaper");
+    println!("Wallpapers: {} instances", wallpaper_keys.len());
+    for key in &wallpaper_keys {
+        if let Ok(instance) = config.get_special_category("wallpaper", key) {
+            let path = instance.get("path").and_then(|v| v.as_string().ok()).unwrap_or("");
+            println!("  [{}] path={}", key, path);
+        }
+    }
 
     // Remove all preloads
+    let preload_count = all_handlers.get("preload").map(|v| v.len()).unwrap_or(0);
+    println!("\nRemoving {} preloads...", preload_count);
     for i in (0..preload_count).rev() {
-        println!("Removing preload at index {}", i);
         config.remove_handler_call("preload", i).expect("Failed to remove preload");
     }
 
-    // Remove all wallpapers
-    for i in (0..wallpaper_count).rev() {
-        println!("Removing wallpaper at index {}", i);
-        config.remove_handler_call("wallpaper", i).expect("Failed to remove wallpaper");
+    // Remove all wallpaper instances
+    println!("Removing {} wallpaper instances...", wallpaper_keys.len());
+    for key in &wallpaper_keys {
+        config.remove_special_category_instance("wallpaper", key).expect("Failed to remove wallpaper");
     }
 
     println!("\nAdding new wallpaper...");
     config.add_handler_call("preload", "/tmp/test.jpg".to_string()).expect("Failed to add preload");
-    config.add_handler_call("wallpaper", ",/tmp/test.jpg".to_string()).expect("Failed to add wallpaper");
-
-    println!("\n=== AFTER REPLACEMENT (before save) ===");
-    let all_handlers = config.all_handler_calls();
-    println!("Preloads: {:?}", all_handlers.get("preload"));
-    println!("Wallpapers: {:?}", all_handlers.get("wallpaper"));
 
     // Save to a temp file for testing
     let test_path = Path::new("/tmp/hyprpaper_test.conf");
