@@ -220,7 +220,7 @@ export default function Appearance() {
 					<div>
 						<CardTitle>Wallpaper</CardTitle>
 						<CardDescription>
-							Current wallpaper from hyprpaper configuration
+							Current wallpaper from Hyprpaper or Noctalia
 						</CardDescription>
 					</div>
 					<div className="flex gap-2 items-center">
