@@ -1319,7 +1319,35 @@ fn parse_lua_string_literal(value: &str) -> Option<String> {
 }
 
 fn strip_lua_line_comment(value: &str) -> &str {
-    value.split("--").next().unwrap_or(value)
+    let bytes = value.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = quote {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+
+        match b {
+            b'\'' | b'"' => {
+                quote = Some(b);
+                i += 1;
+            }
+            b'-' if bytes.get(i + 1) == Some(&b'-') => return &value[..i],
+            _ => i += 1,
+        }
+    }
+
+    value
 }
 
 fn parse_dispatcher_expr(
@@ -1809,6 +1837,36 @@ hl.bind("SUPER + SHIFT + 1", hl.dsp.window.move({ workspace = 1 }), { submap_uni
         assert_eq!(binds[1].keybind.modifiers, vec!["SUPER", "SHIFT"]);
         assert_eq!(binds[1].keybind.dispatcher, "movetoworkspace");
         assert_eq!(binds[1].keybind.params, "1");
+    }
+
+    #[test]
+    fn preserves_double_dash_inside_lua_string_literals() {
+        let contents = r#"
+local launcher = "wofi --show drun"
+
+hl.bind("SUPER + D", hl.dsp.exec_cmd("wofi --show drun")) -- application launcher
+hl.bind("SUPER + R", hl.dsp.exec_cmd(launcher))
+"#;
+
+        let binds = parse_binds_from_contents(contents);
+
+        assert_eq!(binds.len(), 2);
+        assert_eq!(binds[0].keybind.dispatcher, "exec");
+        assert_eq!(binds[0].keybind.params, "wofi --show drun");
+        assert_eq!(binds[1].keybind.dispatcher, "exec");
+        assert_eq!(binds[1].keybind.params, "wofi --show drun");
+    }
+
+    #[test]
+    fn strips_lua_line_comments_outside_string_literals() {
+        assert_eq!(
+            strip_lua_line_comment(r#""wofi --show drun" -- launcher"#).trim(),
+            r#""wofi --show drun""#
+        );
+        assert_eq!(
+            strip_lua_line_comment(r#""quoted \"--\" value" -- comment"#).trim(),
+            r#""quoted \"--\" value""#
+        );
     }
 
     #[test]

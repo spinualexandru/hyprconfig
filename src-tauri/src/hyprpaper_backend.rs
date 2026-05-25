@@ -205,6 +205,32 @@ fn set_noctalia_wallpaper(path: &str) -> Result<(), String> {
     Err(format!("Failed to set Noctalia wallpaper: {}", detail))
 }
 
+fn should_write_to_noctalia(config_path: &Path, existing_wallpapers: &[Wallpaper]) -> bool {
+    if config_path.exists() || !existing_wallpapers.is_empty() {
+        return false;
+    }
+
+    get_noctalia_wallpaper().is_some()
+}
+
+#[cfg(test)]
+fn should_write_to_noctalia_state(
+    hyprpaper_config_exists: bool,
+    has_hyprpaper_wallpapers: bool,
+    noctalia_wallpaper_available: bool,
+) -> bool {
+    !hyprpaper_config_exists && !has_hyprpaper_wallpapers && noctalia_wallpaper_available
+}
+
+fn write_hyprpaper_config(config_path: &Path, content: impl AsRef<[u8]>) -> Result<(), String> {
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create Hyprpaper config directory: {}", e))?;
+    }
+
+    fs::write(config_path, content).map_err(|e| format!("Failed to write config file: {}", e))
+}
+
 #[tauri::command]
 pub fn get_hyprpaper_config() -> Result<HyprpaperConfig, String> {
     let mut wallpapers = read_hyprpaper_wallpapers()?;
@@ -233,7 +259,7 @@ pub fn set_wallpaper(
     let config_path = hyprpaper_config_path()?;
     let existing_wallpapers = read_hyprpaper_wallpapers()?;
 
-    if existing_wallpapers.is_empty() {
+    if should_write_to_noctalia(&config_path, &existing_wallpapers) {
         return set_noctalia_wallpaper(path.trim());
     }
 
@@ -248,7 +274,7 @@ pub fn set_wallpaper(
     // Append to config file (or create if doesn't exist)
     let mut content = fs::read_to_string(&config_path).unwrap_or_default();
     content.push_str(&wallpaper_block);
-    fs::write(&config_path, content).map_err(|e| format!("Failed to write config file: {}", e))?;
+    write_hyprpaper_config(&config_path, content)?;
 
     Ok(())
 }
@@ -315,7 +341,8 @@ pub fn replace_wallpaper(
     let path_str = path.trim();
     let fit = fit_mode.unwrap_or_else(|| "cover".to_string());
 
-    if read_hyprpaper_wallpapers()?.is_empty() {
+    let existing_wallpapers = read_hyprpaper_wallpapers()?;
+    if should_write_to_noctalia(&config_path, &existing_wallpapers) {
         return set_noctalia_wallpaper(path_str);
     }
 
@@ -325,7 +352,7 @@ pub fn replace_wallpaper(
         monitor_str, path_str, fit
     );
 
-    fs::write(&config_path, content).map_err(|e| format!("Failed to write config file: {}", e))?;
+    write_hyprpaper_config(&config_path, content)?;
 
     // Use new IPC format: hyprctl hyprpaper wallpaper '[mon], [path], [fit_mode]'
     let command = format!(
@@ -345,7 +372,7 @@ pub fn replace_wallpaper(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_noctalia_wallpaper_output;
+    use super::{parse_noctalia_wallpaper_output, should_write_to_noctalia_state};
 
     #[test]
     fn parses_noctalia_raw_path_output() {
@@ -374,5 +401,20 @@ mod tests {
     #[test]
     fn ignores_noctalia_empty_output() {
         assert_eq!(parse_noctalia_wallpaper_output("null"), None);
+    }
+
+    #[test]
+    fn fresh_hyprpaper_install_uses_hyprpaper_when_noctalia_is_unavailable() {
+        assert!(!should_write_to_noctalia_state(false, false, false));
+    }
+
+    #[test]
+    fn empty_existing_hyprpaper_config_stays_on_hyprpaper() {
+        assert!(!should_write_to_noctalia_state(true, false, true));
+    }
+
+    #[test]
+    fn missing_hyprpaper_config_can_use_available_noctalia_backend() {
+        assert!(should_write_to_noctalia_state(false, false, true));
     }
 }
