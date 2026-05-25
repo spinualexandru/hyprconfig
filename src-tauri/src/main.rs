@@ -3,6 +3,7 @@
 mod audio_backend;
 mod config_backend;
 mod hyprland_backend;
+mod hyprland_lua_backend;
 mod hyprpaper_backend;
 mod os_backend;
 fn main() {

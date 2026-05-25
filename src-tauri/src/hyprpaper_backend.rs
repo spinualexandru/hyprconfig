@@ -1,8 +1,10 @@
 use hyprland::dispatch::DispatchType;
 use hyprlang::{Config, ConfigValue, SpecialCategoryDescriptor};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Wallpaper {
@@ -25,36 +27,47 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
+fn hyprpaper_config_path() -> Result<PathBuf, String> {
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
+
+    Ok(Path::new(&home_dir).join(".config/hypr/hyprpaper.conf"))
+}
+
 fn register_hyprpaper_config(config: &mut Config) {
     // Register hyprpaper-specific keywords as handlers
-    let keywords = vec!["preload", "splash", "splash_offset", "splash_opacity", "ipc"];
+    let keywords = vec![
+        "preload",
+        "splash",
+        "splash_offset",
+        "splash_opacity",
+        "ipc",
+    ];
     for keyword in keywords {
         config.register_handler_fn(keyword, |_ctx| Ok(()));
     }
 
     // Register wallpaper as anonymous special category with its properties
     config.register_special_category(SpecialCategoryDescriptor::anonymous("wallpaper"));
-    config.register_special_category_value("wallpaper", "monitor", ConfigValue::String(String::new()));
+    config.register_special_category_value(
+        "wallpaper",
+        "monitor",
+        ConfigValue::String(String::new()),
+    );
     config.register_special_category_value("wallpaper", "path", ConfigValue::String(String::new()));
-    config.register_special_category_value("wallpaper", "fit_mode", ConfigValue::String("cover".to_string()));
+    config.register_special_category_value(
+        "wallpaper",
+        "fit_mode",
+        ConfigValue::String("cover".to_string()),
+    );
 }
 
-#[tauri::command]
-pub fn get_hyprpaper_config() -> Result<HyprpaperConfig, String> {
-    // Get Hyprpaper config path
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-
-    let config_path = Path::new(&home_dir).join(".config/hypr/hyprpaper.conf");
-
+fn read_hyprpaper_wallpapers() -> Result<Vec<Wallpaper>, String> {
+    let config_path = hyprpaper_config_path()?;
     if !config_path.exists() {
-        // Return empty config if file doesn't exist (config is optional)
-        return Ok(HyprpaperConfig {
-            wallpapers: Vec::new(),
-        });
+        return Ok(Vec::new());
     }
 
-    // Parse the config file using hyprlang
     let mut config = Config::new();
     register_hyprpaper_config(&mut config);
     config
@@ -94,20 +107,161 @@ pub fn get_hyprpaper_config() -> Result<HyprpaperConfig, String> {
         }
     }
 
+    Ok(wallpapers)
+}
+
+fn parse_noctalia_wallpaper_output(output: &str) -> Option<String> {
+    let trimmed = output.trim();
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("null")
+        || trimmed.eq_ignore_ascii_case("nil")
+        || trimmed.eq_ignore_ascii_case("none")
+    {
+        return None;
+    }
+
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        return wallpaper_path_from_json(&value).map(|path| expand_tilde(&path));
+    }
+
+    let first_line = trimmed.lines().next()?.trim();
+    let unquoted = first_line
+        .strip_prefix('"')
+        .and_then(|line| line.strip_suffix('"'))
+        .or_else(|| {
+            first_line
+                .strip_prefix('\'')
+                .and_then(|line| line.strip_suffix('\''))
+        })
+        .unwrap_or(first_line)
+        .trim();
+
+    if unquoted.is_empty() {
+        None
+    } else {
+        Some(expand_tilde(unquoted))
+    }
+}
+
+fn wallpaper_path_from_json(value: &Value) -> Option<String> {
+    match value {
+        Value::String(path) if !path.trim().is_empty() => Some(path.trim().to_string()),
+        Value::Object(map) => ["path", "wallpaper", "image", "current"]
+            .iter()
+            .find_map(|key| map.get(*key).and_then(wallpaper_path_from_json)),
+        _ => None,
+    }
+}
+
+fn get_noctalia_wallpaper() -> Option<Wallpaper> {
+    let output = match Command::new("qs")
+        .args(["-c", "noctalia-shell", "ipc", "call", "wallpaper", "get"])
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!("Noctalia wallpaper IPC unavailable: {}", error);
+            return None;
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("Noctalia wallpaper IPC get failed: {}", stderr.trim());
+        return None;
+    }
+
+    parse_noctalia_wallpaper_output(&String::from_utf8_lossy(&output.stdout)).map(|path| {
+        Wallpaper {
+            monitor: String::new(),
+            path,
+            fit_mode: "cover".to_string(),
+        }
+    })
+}
+
+fn set_noctalia_wallpaper(path: &str) -> Result<(), String> {
+    let output = Command::new("qs")
+        .args([
+            "-c",
+            "noctalia-shell",
+            "ipc",
+            "call",
+            "wallpaper",
+            "set",
+            path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run Noctalia wallpaper IPC: {}", e))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+
+    Err(format!("Failed to set Noctalia wallpaper: {}", detail))
+}
+
+fn should_write_to_noctalia(config_path: &Path, existing_wallpapers: &[Wallpaper]) -> bool {
+    if config_path.exists() || !existing_wallpapers.is_empty() {
+        return false;
+    }
+
+    get_noctalia_wallpaper().is_some()
+}
+
+#[cfg(test)]
+fn should_write_to_noctalia_state(
+    hyprpaper_config_exists: bool,
+    has_hyprpaper_wallpapers: bool,
+    noctalia_wallpaper_available: bool,
+) -> bool {
+    !hyprpaper_config_exists && !has_hyprpaper_wallpapers && noctalia_wallpaper_available
+}
+
+fn write_hyprpaper_config(config_path: &Path, content: impl AsRef<[u8]>) -> Result<(), String> {
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create Hyprpaper config directory: {}", e))?;
+    }
+
+    fs::write(config_path, content).map_err(|e| format!("Failed to write config file: {}", e))
+}
+
+#[tauri::command]
+pub fn get_hyprpaper_config() -> Result<HyprpaperConfig, String> {
+    let mut wallpapers = read_hyprpaper_wallpapers()?;
+
+    if wallpapers.is_empty() {
+        if let Some(wallpaper) = get_noctalia_wallpaper() {
+            wallpapers.push(wallpaper);
+        }
+    }
+
     Ok(HyprpaperConfig { wallpapers })
 }
 
 #[tauri::command]
-pub fn set_wallpaper(monitor: String, path: String, fit_mode: Option<String>) -> Result<(), String> {
+pub fn set_wallpaper(
+    monitor: String,
+    path: String,
+    fit_mode: Option<String>,
+) -> Result<(), String> {
     // Validate path
     if path.trim().is_empty() {
         return Err("Path cannot be empty".to_string());
     }
 
     let fit = fit_mode.unwrap_or_else(|| "cover".to_string());
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-    let config_path = Path::new(&home_dir).join(".config/hypr/hyprpaper.conf");
+    let config_path = hyprpaper_config_path()?;
+    let existing_wallpapers = read_hyprpaper_wallpapers()?;
+
+    if should_write_to_noctalia(&config_path, &existing_wallpapers) {
+        return set_noctalia_wallpaper(path.trim());
+    }
 
     // Build wallpaper category content
     let wallpaper_block = format!(
@@ -120,8 +274,7 @@ pub fn set_wallpaper(monitor: String, path: String, fit_mode: Option<String>) ->
     // Append to config file (or create if doesn't exist)
     let mut content = fs::read_to_string(&config_path).unwrap_or_default();
     content.push_str(&wallpaper_block);
-    fs::write(&config_path, content)
-        .map_err(|e| format!("Failed to write config file: {}", e))?;
+    write_hyprpaper_config(&config_path, content)?;
 
     Ok(())
 }
@@ -173,18 +326,25 @@ pub fn update_wallpaper(
 }
 
 #[tauri::command]
-pub fn replace_wallpaper(monitor: String, path: String, fit_mode: Option<String>) -> Result<(), String> {
+pub fn replace_wallpaper(
+    monitor: String,
+    path: String,
+    fit_mode: Option<String>,
+) -> Result<(), String> {
     if path.trim().is_empty() {
         return Err("Path cannot be empty".to_string());
     }
 
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-    let config_path = Path::new(&home_dir).join(".config/hypr/hyprpaper.conf");
+    let config_path = hyprpaper_config_path()?;
 
     let monitor_str = monitor.trim();
     let path_str = path.trim();
     let fit = fit_mode.unwrap_or_else(|| "cover".to_string());
+
+    let existing_wallpapers = read_hyprpaper_wallpapers()?;
+    if should_write_to_noctalia(&config_path, &existing_wallpapers) {
+        return set_noctalia_wallpaper(path_str);
+    }
 
     // Write new config file with single wallpaper in new format
     let content = format!(
@@ -192,10 +352,13 @@ pub fn replace_wallpaper(monitor: String, path: String, fit_mode: Option<String>
         monitor_str, path_str, fit
     );
 
-    fs::write(&config_path, content).map_err(|e| format!("Failed to write config file: {}", e))?;
+    write_hyprpaper_config(&config_path, content)?;
 
     // Use new IPC format: hyprctl hyprpaper wallpaper '[mon], [path], [fit_mode]'
-    let command = format!("hyprctl hyprpaper wallpaper '{}, {}, {}'", monitor_str, path_str, fit);
+    let command = format!(
+        "hyprctl hyprpaper wallpaper '{}, {}, {}'",
+        monitor_str, path_str, fit
+    );
 
     let hyprpaper_result = hyprland::dispatch::Dispatch::call(DispatchType::Exec(&command));
 
@@ -205,4 +368,53 @@ pub fn replace_wallpaper(monitor: String, path: String, fit_mode: Option<String>
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_noctalia_wallpaper_output, should_write_to_noctalia_state};
+
+    #[test]
+    fn parses_noctalia_raw_path_output() {
+        assert_eq!(
+            parse_noctalia_wallpaper_output("/tmp/wallpaper.jpg\n").as_deref(),
+            Some("/tmp/wallpaper.jpg")
+        );
+    }
+
+    #[test]
+    fn parses_noctalia_json_string_output() {
+        assert_eq!(
+            parse_noctalia_wallpaper_output("\"/tmp/wallpaper.jpg\"").as_deref(),
+            Some("/tmp/wallpaper.jpg")
+        );
+    }
+
+    #[test]
+    fn parses_noctalia_json_object_output() {
+        assert_eq!(
+            parse_noctalia_wallpaper_output(r#"{"wallpaper":"/tmp/wallpaper.jpg"}"#).as_deref(),
+            Some("/tmp/wallpaper.jpg")
+        );
+    }
+
+    #[test]
+    fn ignores_noctalia_empty_output() {
+        assert_eq!(parse_noctalia_wallpaper_output("null"), None);
+    }
+
+    #[test]
+    fn fresh_hyprpaper_install_uses_hyprpaper_when_noctalia_is_unavailable() {
+        assert!(!should_write_to_noctalia_state(false, false, false));
+    }
+
+    #[test]
+    fn empty_existing_hyprpaper_config_stays_on_hyprpaper() {
+        assert!(!should_write_to_noctalia_state(true, false, true));
+    }
+
+    #[test]
+    fn missing_hyprpaper_config_can_use_available_noctalia_backend() {
+        assert!(should_write_to_noctalia_state(false, false, true));
+    }
 }

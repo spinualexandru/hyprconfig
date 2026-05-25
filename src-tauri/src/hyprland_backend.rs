@@ -4,14 +4,8 @@ use hyprlang::Hyprland;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::panic;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-
-fn get_hyprland_config_path() -> Result<PathBuf, String> {
-    let home_dir =
-        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-    Ok(Path::new(&home_dir).join(".config/hypr/hyprland.conf"))
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DisplayMode {
@@ -695,7 +689,11 @@ pub struct Keybind {
 
 #[tauri::command]
 pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_keybinds(&config.path);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -764,7 +762,11 @@ pub struct Variable {
 
 #[tauri::command]
 pub fn get_variables() -> Result<Vec<Variable>, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_variables(&config.path);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -787,12 +789,7 @@ pub fn get_variables() -> Result<Vec<Variable>, String> {
         let source_file = hypr
             .config()
             .get_key_source_file(&format!("${}", name))
-            .map(|p| {
-                p.strip_prefix(hypr_dir)
-                    .unwrap_or(p)
-                    .display()
-                    .to_string()
-            });
+            .map(|p| p.strip_prefix(hypr_dir).unwrap_or(p).display().to_string());
 
         variables.push(Variable {
             name: name.clone(),
@@ -809,7 +806,11 @@ pub fn get_variables() -> Result<Vec<Variable>, String> {
 
 #[tauri::command]
 pub fn set_variable(name: String, value: String) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::set_variable(&config.path, name, value);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -847,7 +848,11 @@ pub fn add_variable(name: String, value: String) -> Result<(), String> {
         return Err("Variable name cannot be empty".to_string());
     }
 
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::add_variable(&config.path, name, value);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -874,7 +879,11 @@ pub fn add_variable(name: String, value: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn delete_variable(name: String) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::delete_variable(&config.path, name);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -913,7 +922,11 @@ pub struct EnvVar {
 
 #[tauri::command]
 pub fn get_env_vars() -> Result<Vec<EnvVar>, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_env_vars(&config.path);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -948,12 +961,7 @@ pub fn get_env_vars() -> Result<Vec<EnvVar>, String> {
             let source_file = hypr
                 .config()
                 .get_key_source_file(&format!("env:{}", index))
-                .map(|p| {
-                    p.strip_prefix(hypr_dir)
-                        .unwrap_or(p)
-                        .display()
-                        .to_string()
-                });
+                .map(|p| p.strip_prefix(hypr_dir).unwrap_or(p).display().to_string());
 
             env_vars.push(EnvVar {
                 name,
@@ -984,7 +992,11 @@ pub fn add_env_var(name: String, value: String) -> Result<(), String> {
         );
     }
 
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::add_env_var(&config.path, name, value);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1013,7 +1025,11 @@ pub fn add_env_var(name: String, value: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn edit_env_var(index: usize, name: String, value: String) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::edit_env_var(&config.path, index, name, value);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1046,7 +1062,11 @@ pub fn edit_env_var(index: usize, name: String, value: String) -> Result<(), Str
 
 #[tauri::command]
 pub fn delete_env_var(index: usize) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::delete_env_var(&config.path, index);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1086,7 +1106,17 @@ pub fn add_keybind(
         return Err("Dispatcher is required".to_string());
     }
 
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::add_keybind(
+            &config.path,
+            modifiers,
+            key,
+            dispatcher,
+            params,
+        );
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1140,7 +1170,10 @@ pub fn edit_keybind(
     dispatcher: String,
     params: String,
 ) -> Result<(), String> {
-    println!("edit_keybind called: index={}, key={}, dispatcher={}", index, key, dispatcher);
+    println!(
+        "edit_keybind called: index={}, key={}, dispatcher={}",
+        index, key, dispatcher
+    );
 
     // Validate inputs
     if key.trim().is_empty() {
@@ -1151,7 +1184,18 @@ pub fn edit_keybind(
         return Err("Dispatcher is required".to_string());
     }
 
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::edit_keybind(
+            &config.path,
+            index,
+            modifiers,
+            key,
+            dispatcher,
+            params,
+        );
+    }
+    let config_path = config.path;
     println!("Config path: {:?}", config_path);
 
     if !config_path.exists() {
@@ -1201,7 +1245,8 @@ pub fn edit_keybind(
 
     // Save the config file
     println!("Saving config files...");
-    let saved_files = hypr.config_mut()
+    let saved_files = hypr
+        .config_mut()
         .save_all()
         .map_err(|e| format!("Failed to save config files: {:?}", e))?;
     println!("Saved files: {:?}", saved_files);
@@ -1211,7 +1256,11 @@ pub fn edit_keybind(
 
 #[tauri::command]
 pub fn delete_keybind(index: usize) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::delete_keybind(&config.path, index);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1277,7 +1326,20 @@ pub fn save_monitor_settings(
     y: i32,
     scale: f32,
 ) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::save_monitor_settings(
+            &config.path,
+            name,
+            width,
+            height,
+            refresh_rate,
+            x,
+            y,
+            scale,
+        );
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1342,7 +1404,11 @@ pub fn save_monitor_settings(
 
 #[tauri::command]
 pub fn get_all_bindu() -> Result<Vec<Keybind>, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_all_bindu(&config.path);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1404,7 +1470,17 @@ pub fn add_bindu(
         return Err("Dispatcher is required".to_string());
     }
 
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::add_bindu(
+            &config.path,
+            modifiers,
+            key,
+            dispatcher,
+            params,
+        );
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1448,7 +1524,11 @@ pub fn add_bindu(
 
 #[tauri::command]
 pub fn delete_bindu(index: usize) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::delete_bindu(&config.path, index);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1489,37 +1569,125 @@ pub struct Windowrule {
     pub effect_properties: Vec<WindowruleProperty>,
 }
 
-const WINDOWRULE_MATCH_PROPERTIES: &[&str] = &[
-    "class", "title", "initial_class", "initial_title", "floating", "tag",
-    "xwayland", "fullscreen", "pinned", "focus", "group", "modal",
-    "fullscreenstate_internal", "fullscreenstate_client", "on_workspace",
-    "content", "xdg_tag", "namespace", "exec_token",
+pub const WINDOWRULE_MATCH_PROPERTIES: &[&str] = &[
+    "class",
+    "title",
+    "initial_class",
+    "initial_title",
+    "floating",
+    "tag",
+    "xwayland",
+    "fullscreen",
+    "pinned",
+    "focus",
+    "group",
+    "modal",
+    "fullscreenstate_internal",
+    "fullscreenstate_client",
+    "on_workspace",
+    "content",
+    "xdg_tag",
+    "namespace",
+    "exec_token",
     // Aliases
-    "float", "pin", "workspace", "fullscreen_state_internal", "fullscreen_state_client",
+    "float",
+    "pin",
+    "workspace",
+    "fullscreen_state_internal",
+    "fullscreen_state_client",
 ];
 
-const WINDOWRULE_EFFECT_PROPERTIES: &[&str] = &[
-    "float", "tile", "fullscreen", "maximize", "fullscreenstate", "move", "size",
-    "center", "pseudo", "monitor", "workspace", "noinitialfocus", "pin", "group",
-    "suppressevent", "content", "noclosefor", "rounding", "rounding_power",
-    "persistent_size", "animation", "border_color", "bordercolor", "idle_inhibit",
-    "idleinhibit", "opacity", "tag", "max_size", "maxsize", "min_size", "minsize",
-    "border_size", "bordersize", "allows_input", "dim_around", "decorate",
-    "focus_on_activate", "keep_aspect_ratio", "keepaspectratio", "nearest_neighbor",
-    "nearestneighbor", "no_anim", "noanim", "no_blur", "noblur", "no_dim", "nodim",
-    "no_focus", "nofocus", "no_follow_mouse", "nofollowmouse", "no_max_size",
-    "nomaxsize", "no_shadow", "noshadow", "no_shortcuts_inhibit", "noshortcutsinhibit",
-    "opaque", "force_rgbx", "forcergbx", "sync_fullscreen", "syncfullscreen",
-    "immediate", "xray", "render_unfocused", "renderunfocused", "no_screen_share",
-    "noscreenshare", "no_vrr", "novrr", "scroll_mouse", "scrollmouse",
-    "scroll_touchpad", "scrolltouchpad", "stay_focused", "stayfocused",
+pub const WINDOWRULE_EFFECT_PROPERTIES: &[&str] = &[
+    "float",
+    "tile",
+    "fullscreen",
+    "maximize",
+    "fullscreenstate",
+    "move",
+    "size",
+    "center",
+    "pseudo",
+    "monitor",
+    "workspace",
+    "noinitialfocus",
+    "pin",
+    "group",
+    "suppressevent",
+    "content",
+    "noclosefor",
+    "rounding",
+    "rounding_power",
+    "persistent_size",
+    "animation",
+    "border_color",
+    "bordercolor",
+    "idle_inhibit",
+    "idleinhibit",
+    "opacity",
+    "tag",
+    "max_size",
+    "maxsize",
+    "min_size",
+    "minsize",
+    "border_size",
+    "bordersize",
+    "allows_input",
+    "dim_around",
+    "decorate",
+    "focus_on_activate",
+    "keep_aspect_ratio",
+    "keepaspectratio",
+    "nearest_neighbor",
+    "nearestneighbor",
+    "no_anim",
+    "noanim",
+    "no_blur",
+    "noblur",
+    "no_dim",
+    "nodim",
+    "no_focus",
+    "nofocus",
+    "no_follow_mouse",
+    "nofollowmouse",
+    "no_max_size",
+    "nomaxsize",
+    "no_shadow",
+    "noshadow",
+    "no_shortcuts_inhibit",
+    "noshortcutsinhibit",
+    "opaque",
+    "force_rgbx",
+    "forcergbx",
+    "sync_fullscreen",
+    "syncfullscreen",
+    "immediate",
+    "xray",
+    "render_unfocused",
+    "renderunfocused",
+    "no_screen_share",
+    "noscreenshare",
+    "no_vrr",
+    "novrr",
+    "scroll_mouse",
+    "scrollmouse",
+    "scroll_touchpad",
+    "scrolltouchpad",
+    "stay_focused",
+    "stayfocused",
     // Aliases
-    "fullscreen_state", "no_initial_focus", "suppress_event", "no_close_for",
+    "fullscreen_state",
+    "no_initial_focus",
+    "suppress_event",
+    "no_close_for",
 ];
 
 #[tauri::command]
 pub fn get_windowrule_names() -> Result<Vec<String>, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_windowrule_names(&config.path);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1537,7 +1705,11 @@ pub fn get_windowrule_names() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub fn get_windowrule(name: String) -> Result<Windowrule, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_windowrule(&config.path, name);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1595,7 +1767,11 @@ pub fn get_windowrule(name: String) -> Result<Windowrule, String> {
 
 #[tauri::command]
 pub fn delete_windowrule(name: String) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::delete_windowrule(&config.path, name);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1636,19 +1812,33 @@ pub struct Layerrule {
     pub effect_properties: Vec<LayerruleProperty>,
 }
 
-const LAYERRULE_MATCH_PROPERTIES: &[&str] = &[
-    "namespace", "address", "class", "title", "monitor", "layer",
-];
+pub const LAYERRULE_MATCH_PROPERTIES: &[&str] =
+    &["namespace", "address", "class", "title", "monitor", "layer"];
 
-const LAYERRULE_EFFECT_PROPERTIES: &[&str] = &[
-    "blur", "blur_popups", "ignorealpha", "ignore_alpha", "ignorezero",
-    "animation", "noanim", "no_anim", "xray", "dim_around", "order",
-    "above_lock", "no_screen_share", "noscreenshare",
+pub const LAYERRULE_EFFECT_PROPERTIES: &[&str] = &[
+    "blur",
+    "blur_popups",
+    "ignorealpha",
+    "ignore_alpha",
+    "ignorezero",
+    "animation",
+    "noanim",
+    "no_anim",
+    "xray",
+    "dim_around",
+    "order",
+    "above_lock",
+    "no_screen_share",
+    "noscreenshare",
 ];
 
 #[tauri::command]
 pub fn get_layerrule_names() -> Result<Vec<String>, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_layerrule_names(&config.path);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1666,7 +1856,11 @@ pub fn get_layerrule_names() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub fn get_layerrule(name: String) -> Result<Layerrule, String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::get_layerrule(&config.path, name);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
@@ -1722,7 +1916,11 @@ pub fn get_layerrule(name: String) -> Result<Layerrule, String> {
 
 #[tauri::command]
 pub fn delete_layerrule(name: String) -> Result<(), String> {
-    let config_path = get_hyprland_config_path()?;
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        return crate::hyprland_lua_backend::delete_layerrule(&config.path, name);
+    }
+    let config_path = config.path;
 
     if !config_path.exists() {
         return Err(format!(
