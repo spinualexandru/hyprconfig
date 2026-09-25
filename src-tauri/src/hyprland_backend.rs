@@ -680,6 +680,28 @@ fn get_cpu_info() -> String {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ConfigInfo {
+    pub path: String,
+    /// "lua" or "hyprlang"
+    pub format: String,
+    pub exists: bool,
+}
+
+#[tauri::command]
+pub fn get_config_info() -> Result<ConfigInfo, String> {
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+    Ok(ConfigInfo {
+        path: config.path.display().to_string(),
+        format: match config.format {
+            crate::hyprland_lua_backend::HyprlandConfigFormat::Lua => "lua",
+            crate::hyprland_lua_backend::HyprlandConfigFormat::Hyprlang => "hyprlang",
+        }
+        .to_string(),
+        exists: config.path.exists(),
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Keybind {
     pub modifiers: Vec<String>,
     pub key: String,
@@ -1297,20 +1319,45 @@ pub fn apply_monitor_settings(
     y: i32,
     scale: f32,
 ) -> Result<(), String> {
-    // Format: monitor=NAME,WIDTHxHEIGHT@RATEHz,XxY,SCALE
-    let monitor_config = format!(
-        "{},{}x{}@{:.2}Hz,{}x{},{}",
-        name, width, height, refresh_rate, x, y, scale
-    );
+    let config = crate::hyprland_lua_backend::get_preferred_config()?;
+
+    // `hyprctl keyword` only works with hyprland.conf (and is gone after Hyprland 0.56);
+    // Lua configs apply monitor rules through `hyprctl eval`.
+    let args = if config.format == crate::hyprland_lua_backend::HyprlandConfigFormat::Lua {
+        vec![
+            "eval".to_string(),
+            crate::hyprland_lua_backend::monitor_eval_code(
+                &name,
+                width,
+                height,
+                refresh_rate,
+                x,
+                y,
+                scale,
+            ),
+        ]
+    } else {
+        vec![
+            "keyword".to_string(),
+            "monitor".to_string(),
+            format!(
+                "{},{}x{}@{:.2}Hz,{}x{},{}",
+                name, width, height, refresh_rate, x, y, scale
+            ),
+        ]
+    };
 
     let output = Command::new("hyprctl")
-        .args(["keyword", "monitor", &monitor_config])
+        .args(&args)
         .output()
         .map_err(|e| format!("Failed to run hyprctl: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to apply monitor settings: {}", stderr));
+    // hyprctl exits 0 even when Hyprland rejects the request, so check the reply too.
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || stdout != "ok" {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = if stdout.is_empty() { stderr } else { stdout };
+        return Err(format!("Failed to apply monitor settings: {}", detail));
     }
 
     Ok(())
@@ -1569,6 +1616,8 @@ pub struct Windowrule {
     pub effect_properties: Vec<WindowruleProperty>,
 }
 
+/// hyprland.conf property names (synced with hyprlang-rs 0.5.0). Lua rules are read
+/// field-by-field instead, see `hyprland_lua_backend`.
 pub const WINDOWRULE_MATCH_PROPERTIES: &[&str] = &[
     "class",
     "title",
@@ -1812,6 +1861,7 @@ pub struct Layerrule {
     pub effect_properties: Vec<LayerruleProperty>,
 }
 
+/// hyprland.conf property names (synced with hyprlang-rs 0.5.0).
 pub const LAYERRULE_MATCH_PROPERTIES: &[&str] =
     &["namespace", "address", "class", "title", "monitor", "layer"];
 

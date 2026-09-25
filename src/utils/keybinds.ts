@@ -37,6 +37,14 @@ export const parseCommandVariables = (
         currentText = "";
       }
 
+      // `${name}` marks a variable directly followed by text
+      const braced = command.slice(i).match(/^\$\{([a-zA-Z0-9_]+)\}/);
+      if (braced) {
+        parts.push({ text: braced[0], isVariable: true });
+        i += braced[0].length;
+        continue;
+      }
+
       // Extract variable name (alphanumeric and underscore)
       let varName = "$";
       i++;
@@ -69,7 +77,7 @@ export const getVariableValue = (
   varName: string,
   variables: Variable[],
 ): string | null => {
-  const cleanName = varName.startsWith("$") ? varName.substring(1) : varName;
+  const cleanName = varName.replace(/^\$\{?/, "").replace(/\}$/, "");
   const variable = variables.find((v) => v.name === cleanName);
   return variable ? variable.value : null;
 };

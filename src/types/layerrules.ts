@@ -11,32 +11,21 @@ export interface Layerrule {
   effect_properties: LayerruleProperty[];
 }
 
-// Match properties for layerrule v2
-export const LAYERRULE_MATCH_PROPERTIES = [
-  "namespace",
-  "address",
-  "class",
-  "title",
-  "monitor",
-  "layer",
-] as const;
+// Layer rules only match on the surface namespace
+export const LAYERRULE_MATCH_PROPERTIES = ["namespace"] as const;
 
-// Effect properties for layerrule v2 (synced with hyprlang-rs 0.5.0)
+// Effect properties (synced with Hyprland LAYER_RULE_EFFECT_DESCS)
 export const LAYERRULE_EFFECT_PROPERTIES = [
+  "no_anim",
   "blur",
   "blur_popups",
-  "ignorealpha",
   "ignore_alpha",
-  "ignorezero",
-  "animation",
-  "noanim",
-  "no_anim",
-  "xray",
   "dim_around",
+  "xray",
+  "animation",
   "order",
   "above_lock",
   "no_screen_share",
-  "noscreenshare",
 ] as const;
 
 export type LayerruleMatchProperty = typeof LAYERRULE_MATCH_PROPERTIES[number];

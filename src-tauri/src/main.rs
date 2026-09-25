@@ -14,6 +14,7 @@ fn main() {
             hyprland_backend::get_network_info,
             hyprland_backend::scan_wifi_networks,
             hyprland_backend::get_system_info,
+            hyprland_backend::get_config_info,
             hyprland_backend::get_keybinds,
             hyprland_backend::get_variables,
             hyprland_backend::set_variable,
