@@ -15,8 +15,10 @@ import { Label } from "@/components/ui/label";
 import type { Keybind } from "@/types/keybinds";
 import {
   AVAILABLE_DISPATCHERS,
+  LUA_ONLY_DISPATCHERS,
   MODIFIER_OPTIONS,
 } from "@/constants/keybinds";
+import { useConfigInfo } from "@/hooks/use-config-info";
 import { getDispatcherDescription } from "@/utils/keybinds";
 
 interface KeybindFormDialogProps {
@@ -43,6 +45,9 @@ export function KeybindFormDialog({
   const [dispatcherSuggestions, setDispatcherSuggestions] = useState<string[]>(
     [],
   );
+  const configInfo = useConfigInfo();
+  const isLua = configInfo?.format === "lua";
+  const isLuaDispatcher = formDispatcher.trim() === "lua";
 
   // Reset form when dialog opens/closes or editing changes
   useEffect(() => {
@@ -77,9 +82,12 @@ export function KeybindFormDialog({
     setFormDispatcher(value);
     // Update suggestions based on input
     if (value.trim()) {
-      const filtered = AVAILABLE_DISPATCHERS.filter((d) =>
-        d.toLowerCase().includes(value.toLowerCase()),
-      ).slice(0, 8);
+      const dispatchers = isLua
+        ? [...AVAILABLE_DISPATCHERS, ...LUA_ONLY_DISPATCHERS]
+        : AVAILABLE_DISPATCHERS;
+      const filtered = dispatchers
+        .filter((d) => d.toLowerCase().includes(value.toLowerCase()))
+        .slice(0, 8);
       setDispatcherSuggestions(filtered);
     } else {
       setDispatcherSuggestions([]);
@@ -217,21 +225,36 @@ export function KeybindFormDialog({
             </datalist>
             <p className="text-xs text-muted-foreground">
               Common: exec, killactive, workspace, togglefloating, fullscreen
+              {isLua && (
+                <>
+                  . Use <code>lua</code> for any other hl.dsp.* call
+                </>
+              )}
             </p>
           </div>
 
           {/* Parameters */}
           <div className="space-y-2">
-            <Label htmlFor="params">Parameters (optional)</Label>
+            <Label htmlFor="params">
+              {isLuaDispatcher ? "Lua expression *" : "Parameters (optional)"}
+            </Label>
             <Input
               id="params"
-              placeholder="e.g., kitty, 1, l"
+              placeholder={
+                isLuaDispatcher
+                  ? "e.g., hl.dsp.window.fullscreen({ mode = \"maximized\" })"
+                  : "e.g., kitty, 1, l"
+              }
               value={formParams}
               onChange={(e) => setFormParams(e.target.value)}
               disabled={formLoading}
             />
             <p className="text-xs text-muted-foreground">
-              Command arguments. Can use variables like $terminal
+              {isLuaDispatcher
+                ? "Written to the config as-is: an hl.dsp.* call or a function"
+                : isLua
+                  ? "Command arguments. Can use variables like $terminal or ${terminal}"
+                  : "Command arguments. Can use variables like $terminal"}
             </p>
           </div>
 

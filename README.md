@@ -13,6 +13,8 @@ https://github.com/user-attachments/assets/4fa72335-f117-4fed-a3fb-e0b2b6437abb
 
 Configure hyprland using a GUI.
 
+Works with `hyprland.lua` (the only format Hyprland reads after 0.56) and with the legacy `hyprland.conf`.
+
 ## How to run
 ```
 pnpm tauri dev -- --bin tauri-app

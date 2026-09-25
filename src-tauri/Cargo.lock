@@ -3941,6 +3941,7 @@ dependencies = [
 name = "tauri-app"
 version = "0.2.0"
 dependencies = [
+ "glob",
  "hyprland",
  "hyprlang",
  "pipewire",

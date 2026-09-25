@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { useConfigInfo } from "@/hooks/use-config-info";
 import type { Windowrule } from "@/types/windowrules";
 
 function WindowrulesTableSkeleton() {
@@ -171,6 +172,7 @@ export default function Windowrules() {
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const configInfo = useConfigInfo();
 
   useEffect(() => {
     loadWindowrules();
@@ -218,7 +220,7 @@ export default function Windowrules() {
             Windowrules
           </h1>
           <p className="text-muted-foreground mt-2">
-            View and manage your Hyprland v3 windowrule configurations
+            View and manage your Hyprland window rules
           </p>
         </div>
         <div className="flex gap-2">
@@ -253,10 +255,22 @@ export default function Windowrules() {
               No windowrules found in your Hyprland configuration.
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Windowrules v3 use the special category syntax:{" "}
-              <code className="bg-muted px-1 rounded">
-                windowrule[name] {"{"} ... {"}"}
-              </code>
+              {configInfo?.format === "hyprlang" ? (
+                <>
+                  Windowrules v3 use the special category syntax:{" "}
+                  <code className="bg-muted px-1 rounded">
+                    windowrule[name] {"{"} ... {"}"}
+                  </code>
+                </>
+              ) : (
+                <>
+                  Rules are declared with{" "}
+                  <code className="bg-muted px-1 rounded">
+                    hl.window_rule({"{"} match = {"{"} class = "..." {"}"}, float = true {"}"})
+                  </code>
+                  . Rules without a <code>name</code> are listed by position.
+                </>
+              )}
             </p>
           </CardContent>
         </Card>
