@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { DollarSign, RefreshCw, Plus } from "lucide-react";
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -57,7 +57,7 @@ function VariablesTableSkeleton() {
 export default function Variables() {
 	const [variables, setVariables] = useState<Variable[]>([]);
 	const [cachedVariables, setCachedVariables] = useState<Variable[]>([]);
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(true);
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
@@ -73,14 +73,7 @@ export default function Variables() {
 	const [editValue, setEditValue] = useState("");
 	const [editLoading, setEditLoading] = useState(false);
 
-	useEffect(() => {
-		loadVariables();
-	}, []);
-
-	const loadVariables = async () => {
-		setLoading(true);
-		setError(null);
-
+	const fetchVariables = useCallback(() => {
 		invoke<Variable[]>("get_variables")
 			.then((result) => {
 				setVariables(result);
@@ -88,16 +81,22 @@ export default function Variables() {
 			})
 			.catch((err) => {
 				setError(err as string);
-				// Keep showing cached data if available
-				if (cachedVariables.length === 0) {
-					setVariables([]);
-				}
 			})
 			.finally(() => {
 				setLoading(false);
 				setInitialLoad(false);
 			});
-	};
+	}, []);
+
+	useEffect(() => {
+		fetchVariables();
+	}, [fetchVariables]);
+
+	const loadVariables = useCallback(() => {
+		setLoading(true);
+		setError(null);
+		fetchVariables();
+	}, [fetchVariables]);
 
 	const handleAddVariable = async () => {
 		if (!newVarName.trim()) {
@@ -134,34 +133,40 @@ export default function Variables() {
 		setEditValue("");
 	};
 
-	const handleSaveEdit = async (varName: string) => {
-		setEditLoading(true);
+	const handleSaveEdit = useCallback(
+		async (varName: string) => {
+			setEditLoading(true);
 
-		invoke("set_variable", { name: varName, value: editValue })
-			.then(() => {
-				// Success - exit edit mode and reload
-				setEditingIndex(null);
-				setEditValue("");
-				loadVariables();
-			})
-			.catch((err) => {
-				setError(err as string);
-			})
-			.finally(() => {
-				setEditLoading(false);
-			});
-	};
+			invoke("set_variable", { name: varName, value: editValue })
+				.then(() => {
+					// Success - exit edit mode and reload
+					setEditingIndex(null);
+					setEditValue("");
+					loadVariables();
+				})
+				.catch((err) => {
+					setError(err as string);
+				})
+				.finally(() => {
+					setEditLoading(false);
+				});
+		},
+		[editValue, loadVariables],
+	);
 
-	const handleDeleteVariable = async (varName: string) => {
-		invoke("delete_variable", { name: varName })
-			.then(() => {
-				// Success - reload variables
-				loadVariables();
-			})
-			.catch((err) => {
-				setError(err as string);
-			});
-	};
+	const handleDeleteVariable = useCallback(
+		async (varName: string) => {
+			invoke("delete_variable", { name: varName })
+				.then(() => {
+					// Success - reload variables
+					loadVariables();
+				})
+				.catch((err) => {
+					setError(err as string);
+				});
+		},
+		[loadVariables],
+	);
 
 	// Use cached variables if loading and cache exists, otherwise use current variables
 	const displayVariables =
@@ -181,28 +186,35 @@ export default function Variables() {
 				onEditValueChange: setEditValue,
 				onDelete: handleDeleteVariable,
 			}),
-		[editingIndex, editValue, editLoading],
+		[
+			editingIndex,
+			editValue,
+			editLoading,
+			handleSaveEdit,
+			handleDeleteVariable,
+		],
 	);
 
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-3xl font-bold tracking-tight text-foreground">Variables</h1>
+					<h1 className="text-3xl font-bold tracking-tight text-foreground">
+						Variables
+					</h1>
 					<p className="text-muted-foreground mt-2">
 						View and manage your Hyprland configuration variables
 					</p>
 				</div>
 				<div className="flex gap-2">
-					<Button
-						onClick={() => setShowAddDialog(true)}
-						variant="default"
-					>
+					<Button onClick={() => setShowAddDialog(true)} variant="default">
 						<Plus className="h-4 w-4 mr-2" />
 						Add Variable
 					</Button>
 					<Button onClick={loadVariables} variant="outline" disabled={loading}>
-						<RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+						<RefreshCw
+							className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
+						/>
 						Refresh
 					</Button>
 				</div>
@@ -297,9 +309,7 @@ export default function Variables() {
 								}}
 							/>
 						</div>
-						{addError && (
-							<p className="text-sm text-destructive">{addError}</p>
-						)}
+						{addError && <p className="text-sm text-destructive">{addError}</p>}
 					</div>
 					<DialogFooter>
 						<Button

@@ -1,5 +1,5 @@
 export interface Variable {
-  name: string;
-  value: string;
-  source_file?: string;
+	name: string;
+	value: string;
+	source_file?: string;
 }

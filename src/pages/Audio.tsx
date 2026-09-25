@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Mic, RefreshCw, Volume2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioDeviceCard } from "@/components/audio/AudioDeviceCard";
 import { AudioSectionSkeleton } from "@/components/audio/AudioSkeletons";
 import { AudioStreamCard } from "@/components/audio/AudioStreamCard";
@@ -13,7 +13,7 @@ export default function Audio() {
 	const [cachedAudioState, setCachedAudioState] = useState<AudioState | null>(
 		null,
 	);
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(true);
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
@@ -22,32 +22,39 @@ export default function Audio() {
 		new Map(),
 	);
 
-	const loadAudioState = async () => {
-		setLoading(true);
-		setError(null);
-
-		try {
-			const result = await invoke<AudioState>("get_audio_state");
-			setAudioState(result);
-			setCachedAudioState(result);
-		} catch (err) {
-			setError(err as string);
-			// Keep cached state on error
-		} finally {
-			setLoading(false);
-			setInitialLoad(false);
-		}
-	};
+	const fetchAudioState = useCallback(
+		() =>
+			invoke<AudioState>("get_audio_state")
+				.then((result) => {
+					setAudioState(result);
+					setCachedAudioState(result);
+				})
+				.catch((err) => {
+					setError(err as string);
+					// Keep cached state on error
+				})
+				.finally(() => {
+					setLoading(false);
+					setInitialLoad(false);
+				}),
+		[],
+	);
 
 	useEffect(() => {
-		loadAudioState();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+		fetchAudioState();
+	}, [fetchAudioState]);
+
+	const loadAudioState = useCallback(() => {
+		setLoading(true);
+		setError(null);
+		return fetchAudioState();
+	}, [fetchAudioState]);
 
 	// Cleanup timers on unmount
 	useEffect(() => {
+		const timers = volumeTimers.current;
 		return () => {
-			for (const timer of volumeTimers.current.values()) {
+			for (const timer of timers.values()) {
 				clearTimeout(timer);
 			}
 		};
@@ -125,7 +132,8 @@ export default function Audio() {
 	// Display data - use cached if loading and cache exists
 	const displayState =
 		loading && cachedAudioState ? cachedAudioState : audioState;
-	const showSkeleton = (initialLoad || (loading && !cachedAudioState)) && !error;
+	const showSkeleton =
+		(initialLoad || (loading && !cachedAudioState)) && !error;
 
 	return (
 		<div className="p-6 space-y-6">
@@ -250,9 +258,7 @@ export default function Audio() {
 									key={stream.id}
 									stream={stream}
 									onVolumeChange={(vol) => handleVolumeChange(stream.id, vol)}
-									onMuteToggle={() =>
-										handleMuteToggle(stream.id, stream.muted)
-									}
+									onMuteToggle={() => handleMuteToggle(stream.id, stream.muted)}
 								/>
 							))
 						)}

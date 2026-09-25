@@ -381,10 +381,10 @@ pub(super) fn eval_lua_string_expr(
     }
 
     if let Some((left, right)) = split_lua_or(expr) {
-        if let Some(value) = eval_lua_string_expr(left, variables) {
-            if !value.is_empty() {
-                return Some(value);
-            }
+        if let Some(value) = eval_lua_string_expr(left, variables)
+            && !value.is_empty()
+        {
+            return Some(value);
         }
         return eval_lua_string_expr(right, variables);
     }

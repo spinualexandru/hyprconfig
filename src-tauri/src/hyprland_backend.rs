@@ -34,7 +34,7 @@ pub struct MonitorInfo {
 #[tauri::command]
 pub fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
     // Wrap in catch_unwind to prevent panics from crossing FFI boundary
-    let result = panic::catch_unwind(|| Monitors::get());
+    let result = panic::catch_unwind(Monitors::get);
 
     match result {
         Ok(Ok(monitors)) => {
@@ -77,31 +77,32 @@ fn get_available_modes_for_all_monitors() -> std::collections::HashMap<String, V
     let mut modes_map = std::collections::HashMap::new();
 
     // Run hyprctl monitors all to get available modes
-    let output = Command::new("hyprctl").args(&["monitors", "all"]).output();
+    let output = Command::new("hyprctl").args(["monitors", "all"]).output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            let mut current_monitor: Option<String> = None;
+    if let Ok(output) = output
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut current_monitor: Option<String> = None;
 
-            for line in output_str.lines() {
-                let line = line.trim();
+        for line in output_str.lines() {
+            let line = line.trim();
 
-                // Detect monitor name (e.g., "Monitor eDP-1 (ID 0):")
-                if line.starts_with("Monitor ") && line.contains("(ID") {
-                    if let Some(name) = line.split_whitespace().nth(1) {
-                        current_monitor = Some(name.to_string());
-                    }
-                }
+            // Detect monitor name (e.g., "Monitor eDP-1 (ID 0):")
+            if line.starts_with("Monitor ")
+                && line.contains("(ID")
+                && let Some(name) = line.split_whitespace().nth(1)
+            {
+                current_monitor = Some(name.to_string());
+            }
 
-                // Parse availableModes line
-                if line.starts_with("availableModes:") {
-                    if let Some(monitor_name) = &current_monitor {
-                        let modes_str = line.strip_prefix("availableModes:").unwrap_or("").trim();
-                        let modes = parse_available_modes(modes_str);
-                        modes_map.insert(monitor_name.clone(), modes);
-                    }
-                }
+            // Parse availableModes line
+            if line.starts_with("availableModes:")
+                && let Some(monitor_name) = &current_monitor
+            {
+                let modes_str = line.strip_prefix("availableModes:").unwrap_or("").trim();
+                let modes = parse_available_modes(modes_str);
+                modes_map.insert(monitor_name.clone(), modes);
             }
         }
     }
@@ -114,21 +115,18 @@ fn parse_available_modes(modes_str: &str) -> Vec<DisplayMode> {
 
     // Parse modes like "2560x1600@240.00Hz 2560x1600@60.00Hz"
     for mode_str in modes_str.split_whitespace() {
-        if let Some((resolution, refresh)) = mode_str.split_once('@') {
-            if let Some((width_str, height_str)) = resolution.split_once('x') {
-                if let (Ok(width), Ok(height)) =
-                    (width_str.parse::<u16>(), height_str.parse::<u16>())
-                {
-                    // Parse refresh rate (remove "Hz" suffix)
-                    let refresh_str = refresh.trim_end_matches("Hz");
-                    if let Ok(refresh_rate) = refresh_str.parse::<f32>() {
-                        modes.push(DisplayMode {
-                            width,
-                            height,
-                            refresh_rate,
-                        });
-                    }
-                }
+        if let Some((resolution, refresh)) = mode_str.split_once('@')
+            && let Some((width_str, height_str)) = resolution.split_once('x')
+            && let (Ok(width), Ok(height)) = (width_str.parse::<u16>(), height_str.parse::<u16>())
+        {
+            // Parse refresh rate (remove "Hz" suffix)
+            let refresh_str = refresh.trim_end_matches("Hz");
+            if let Ok(refresh_rate) = refresh_str.parse::<f32>() {
+                modes.push(DisplayMode {
+                    width,
+                    height,
+                    refresh_rate,
+                });
             }
         }
     }
@@ -262,32 +260,32 @@ pub fn get_network_info() -> Result<Vec<NetworkInterface>, String> {
 
 fn get_ip_addresses(interface_name: &str) -> Vec<String> {
     let output = Command::new("ip")
-        .args(&["addr", "show", interface_name])
+        .args(["addr", "show", interface_name])
         .output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            let mut ips = Vec::new();
+    if let Ok(output) = output
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut ips = Vec::new();
 
-            for line in output_str.lines() {
-                let line = line.trim();
-                if line.starts_with("inet ") {
-                    if let Some(ip) = line.split_whitespace().nth(1) {
-                        ips.push(ip.to_string());
-                    }
-                } else if line.starts_with("inet6 ") {
-                    if let Some(ip) = line.split_whitespace().nth(1) {
-                        // Skip link-local IPv6 addresses (fe80::)
-                        if !ip.starts_with("fe80:") {
-                            ips.push(ip.to_string());
-                        }
-                    }
+        for line in output_str.lines() {
+            let line = line.trim();
+            if line.starts_with("inet ") {
+                if let Some(ip) = line.split_whitespace().nth(1) {
+                    ips.push(ip.to_string());
+                }
+            } else if line.starts_with("inet6 ")
+                && let Some(ip) = line.split_whitespace().nth(1)
+            {
+                // Skip link-local IPv6 addresses (fe80::)
+                if !ip.starts_with("fe80:") {
+                    ips.push(ip.to_string());
                 }
             }
-
-            return ips;
         }
+
+        return ips;
     }
 
     Vec::new()
@@ -296,18 +294,18 @@ fn get_ip_addresses(interface_name: &str) -> Vec<String> {
 fn get_wifi_ssid(interface_name: &str) -> Option<String> {
     // Try using nmcli (NetworkManager) first
     let nmcli_output = Command::new("nmcli")
-        .args(&["-t", "-f", "active,ssid", "dev", "wifi"])
+        .args(["-t", "-f", "active,ssid", "dev", "wifi"])
         .output();
 
-    if let Ok(output) = nmcli_output {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            for line in output_str.lines() {
-                if line.starts_with("yes:") {
-                    let ssid = line.strip_prefix("yes:").unwrap_or("").trim();
-                    if !ssid.is_empty() {
-                        return Some(ssid.to_string());
-                    }
+    if let Ok(output) = nmcli_output
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        for line in output_str.lines() {
+            if line.starts_with("yes:") {
+                let ssid = line.strip_prefix("yes:").unwrap_or("").trim();
+                if !ssid.is_empty() {
+                    return Some(ssid.to_string());
                 }
             }
         }
@@ -315,33 +313,33 @@ fn get_wifi_ssid(interface_name: &str) -> Option<String> {
 
     // Fallback to iwgetid
     let iwgetid_output = Command::new("iwgetid")
-        .args(&["-r", interface_name])
+        .args(["-r", interface_name])
         .output();
 
-    if let Ok(output) = iwgetid_output {
-        if output.status.success() {
-            let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !ssid.is_empty() {
-                return Some(ssid);
-            }
+    if let Ok(output) = iwgetid_output
+        && output.status.success()
+    {
+        let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !ssid.is_empty() {
+            return Some(ssid);
         }
     }
 
     // Last fallback: try iw command
     let iw_output = Command::new("iw")
-        .args(&["dev", interface_name, "link"])
+        .args(["dev", interface_name, "link"])
         .output();
 
-    if let Ok(output) = iw_output {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            for line in output_str.lines() {
-                let line = line.trim();
-                if line.starts_with("SSID:") {
-                    let ssid = line.strip_prefix("SSID:").unwrap_or("").trim();
-                    if !ssid.is_empty() {
-                        return Some(ssid.to_string());
-                    }
+    if let Ok(output) = iw_output
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        for line in output_str.lines() {
+            let line = line.trim();
+            if line.starts_with("SSID:") {
+                let ssid = line.strip_prefix("SSID:").unwrap_or("").trim();
+                if !ssid.is_empty() {
+                    return Some(ssid.to_string());
                 }
             }
         }
@@ -354,7 +352,7 @@ fn get_wifi_ssid(interface_name: &str) -> Option<String> {
 pub async fn scan_wifi_networks() -> Result<Vec<WifiNetwork>, String> {
     // First, trigger a rescan
     let _ = Command::new("nmcli")
-        .args(&["device", "wifi", "rescan"])
+        .args(["device", "wifi", "rescan"])
         .output();
 
     // Small delay to allow scan to complete (non-blocking)
@@ -362,7 +360,7 @@ pub async fn scan_wifi_networks() -> Result<Vec<WifiNetwork>, String> {
 
     // Get list of available networks
     let output = Command::new("nmcli")
-        .args(&[
+        .args([
             "-t",
             "-f",
             "IN-USE,SSID,SIGNAL,SECURITY,BSSID,FREQ",
@@ -510,21 +508,20 @@ fn get_kernel_version() -> String {
 }
 
 fn get_uptime() -> String {
-    if let Ok(contents) = fs::read_to_string("/proc/uptime") {
-        if let Some(uptime_seconds) = contents.split_whitespace().next() {
-            if let Ok(seconds) = uptime_seconds.parse::<f64>() {
-                let days = (seconds / 86400.0).floor() as u64;
-                let hours = ((seconds % 86400.0) / 3600.0).floor() as u64;
-                let minutes = ((seconds % 3600.0) / 60.0).floor() as u64;
+    if let Ok(contents) = fs::read_to_string("/proc/uptime")
+        && let Some(uptime_seconds) = contents.split_whitespace().next()
+        && let Ok(seconds) = uptime_seconds.parse::<f64>()
+    {
+        let days = (seconds / 86400.0).floor() as u64;
+        let hours = ((seconds % 86400.0) / 3600.0).floor() as u64;
+        let minutes = ((seconds % 3600.0) / 60.0).floor() as u64;
 
-                if days > 0 {
-                    return format!("{}d {}h {}m", days, hours, minutes);
-                } else if hours > 0 {
-                    return format!("{}h {}m", hours, minutes);
-                } else {
-                    return format!("{}m", minutes);
-                }
-            }
+        if days > 0 {
+            return format!("{}d {}h {}m", days, hours, minutes);
+        } else if hours > 0 {
+            return format!("{}h {}m", hours, minutes);
+        } else {
+            return format!("{}m", minutes);
         }
     }
     "Unknown".to_string()
@@ -540,13 +537,13 @@ fn get_shell_info() -> String {
     // Try to get shell version
     let version_output = Command::new(&shell_path).arg("--version").output();
 
-    if let Ok(output) = version_output {
-        if output.status.success() {
-            let version_str = String::from_utf8_lossy(&output.stdout);
-            // Get first line which usually contains version info
-            if let Some(first_line) = version_str.lines().next() {
-                return first_line.trim().to_string();
-            }
+    if let Ok(output) = version_output
+        && output.status.success()
+    {
+        let version_str = String::from_utf8_lossy(&output.stdout);
+        // Get first line which usually contains version info
+        if let Some(first_line) = version_str.lines().next() {
+            return first_line.trim().to_string();
         }
     }
 
@@ -566,23 +563,23 @@ fn get_hyprland_version() -> String {
 fn get_gpu_info() -> Vec<String> {
     let output = Command::new("lspci").output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            let mut gpus = Vec::new();
+    if let Ok(output) = output
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut gpus = Vec::new();
 
-            for line in output_str.lines() {
-                if line.contains("VGA compatible controller") || line.contains("3D controller") {
-                    // Extract GPU name after the controller type
-                    if let Some(gpu_name) = line.split(':').nth(2) {
-                        gpus.push(gpu_name.trim().to_string());
-                    }
+        for line in output_str.lines() {
+            if line.contains("VGA compatible controller") || line.contains("3D controller") {
+                // Extract GPU name after the controller type
+                if let Some(gpu_name) = line.split(':').nth(2) {
+                    gpus.push(gpu_name.trim().to_string());
                 }
             }
+        }
 
-            if !gpus.is_empty() {
-                return gpus;
-            }
+        if !gpus.is_empty() {
+            return gpus;
         }
     }
 
@@ -599,10 +596,10 @@ fn get_ram_used() -> String {
                 if let Some(value) = line.split_whitespace().nth(1) {
                     total = value.parse::<u64>().unwrap_or(0);
                 }
-            } else if line.starts_with("MemAvailable:") {
-                if let Some(value) = line.split_whitespace().nth(1) {
-                    available = value.parse::<u64>().unwrap_or(0);
-                }
+            } else if line.starts_with("MemAvailable:")
+                && let Some(value) = line.split_whitespace().nth(1)
+            {
+                available = value.parse::<u64>().unwrap_or(0);
             }
         }
 
@@ -618,12 +615,11 @@ fn get_ram_used() -> String {
 fn get_ram_total() -> String {
     if let Ok(contents) = fs::read_to_string("/proc/meminfo") {
         for line in contents.lines() {
-            if line.starts_with("MemTotal:") {
-                if let Some(value) = line.split_whitespace().nth(1) {
-                    if let Ok(kb) = value.parse::<u64>() {
-                        return format!("{:.2} GB", kb as f64 / 1024.0 / 1024.0);
-                    }
-                }
+            if line.starts_with("MemTotal:")
+                && let Some(value) = line.split_whitespace().nth(1)
+                && let Ok(kb) = value.parse::<u64>()
+            {
+                return format!("{:.2} GB", kb as f64 / 1024.0 / 1024.0);
             }
         }
     }
@@ -632,16 +628,16 @@ fn get_ram_total() -> String {
 }
 
 fn get_disk_used() -> String {
-    let output = Command::new("df").args(&["-h", "/"]).output();
+    let output = Command::new("df").args(["-h", "/"]).output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            if let Some(line) = output_str.lines().nth(1) {
-                if let Some(used) = line.split_whitespace().nth(2) {
-                    return used.to_string();
-                }
-            }
+    if let Ok(output) = output
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        if let Some(line) = output_str.lines().nth(1)
+            && let Some(used) = line.split_whitespace().nth(2)
+        {
+            return used.to_string();
         }
     }
 
@@ -649,16 +645,16 @@ fn get_disk_used() -> String {
 }
 
 fn get_disk_total() -> String {
-    let output = Command::new("df").args(&["-h", "/"]).output();
+    let output = Command::new("df").args(["-h", "/"]).output();
 
-    if let Ok(output) = output {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            if let Some(line) = output_str.lines().nth(1) {
-                if let Some(total) = line.split_whitespace().nth(1) {
-                    return total.to_string();
-                }
-            }
+    if let Ok(output) = output
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        if let Some(line) = output_str.lines().nth(1)
+            && let Some(total) = line.split_whitespace().nth(1)
+        {
+            return total.to_string();
         }
     }
 
@@ -668,10 +664,10 @@ fn get_disk_total() -> String {
 fn get_cpu_info() -> String {
     if let Ok(contents) = fs::read_to_string("/proc/cpuinfo") {
         for line in contents.lines() {
-            if line.starts_with("model name") {
-                if let Some(name) = line.split(':').nth(1) {
-                    return name.trim().to_string();
-                }
+            if line.starts_with("model name")
+                && let Some(name) = line.split(':').nth(1)
+            {
+                return name.trim().to_string();
             }
         }
     }
@@ -1328,12 +1324,14 @@ pub fn apply_monitor_settings(
             "eval".to_string(),
             crate::hyprland_lua_backend::monitor_eval_code(
                 &name,
-                width,
-                height,
-                refresh_rate,
-                x,
-                y,
-                scale,
+                &crate::hyprland_lua_backend::MonitorLayout {
+                    width,
+                    height,
+                    refresh_rate,
+                    x,
+                    y,
+                    scale,
+                },
             ),
         ]
     } else {
@@ -1378,12 +1376,14 @@ pub fn save_monitor_settings(
         return crate::hyprland_lua_backend::save_monitor_settings(
             &config.path,
             name,
-            width,
-            height,
-            refresh_rate,
-            x,
-            y,
-            scale,
+            &crate::hyprland_lua_backend::MonitorLayout {
+                width,
+                height,
+                refresh_rate,
+                x,
+                y,
+                scale,
+            },
         );
     }
     let config_path = config.path;
@@ -1782,27 +1782,27 @@ pub fn get_windowrule(name: String) -> Result<Windowrule, String> {
 
     // Collect match properties
     for prop in WINDOWRULE_MATCH_PROPERTIES {
-        if let Ok(value) = rule.get_string(&format!("match:{}", prop)) {
-            if !value.is_empty() {
-                match_properties.push(WindowruleProperty {
-                    key: prop.to_string(),
-                    value,
-                    property_type: "match".to_string(),
-                });
-            }
+        if let Ok(value) = rule.get_string(&format!("match:{}", prop))
+            && !value.is_empty()
+        {
+            match_properties.push(WindowruleProperty {
+                key: prop.to_string(),
+                value,
+                property_type: "match".to_string(),
+            });
         }
     }
 
     // Collect effect properties
     for prop in WINDOWRULE_EFFECT_PROPERTIES {
-        if let Ok(value) = rule.get_string(prop) {
-            if !value.is_empty() {
-                effect_properties.push(WindowruleProperty {
-                    key: prop.to_string(),
-                    value,
-                    property_type: "effect".to_string(),
-                });
-            }
+        if let Ok(value) = rule.get_string(prop)
+            && !value.is_empty()
+        {
+            effect_properties.push(WindowruleProperty {
+                key: prop.to_string(),
+                value,
+                property_type: "effect".to_string(),
+            });
         }
     }
 
@@ -1933,26 +1933,26 @@ pub fn get_layerrule(name: String) -> Result<Layerrule, String> {
     let mut effect_properties = Vec::new();
 
     for prop in LAYERRULE_MATCH_PROPERTIES {
-        if let Ok(value) = rule.get_string(&format!("match:{}", prop)) {
-            if !value.is_empty() {
-                match_properties.push(LayerruleProperty {
-                    key: prop.to_string(),
-                    value,
-                    property_type: "match".to_string(),
-                });
-            }
+        if let Ok(value) = rule.get_string(&format!("match:{}", prop))
+            && !value.is_empty()
+        {
+            match_properties.push(LayerruleProperty {
+                key: prop.to_string(),
+                value,
+                property_type: "match".to_string(),
+            });
         }
     }
 
     for prop in LAYERRULE_EFFECT_PROPERTIES {
-        if let Ok(value) = rule.get_string(prop) {
-            if !value.is_empty() {
-                effect_properties.push(LayerruleProperty {
-                    key: prop.to_string(),
-                    value,
-                    property_type: "effect".to_string(),
-                });
-            }
+        if let Ok(value) = rule.get_string(prop)
+            && !value.is_empty()
+        {
+            effect_properties.push(LayerruleProperty {
+                key: prop.to_string(),
+                value,
+                property_type: "effect".to_string(),
+            });
         }
     }
 

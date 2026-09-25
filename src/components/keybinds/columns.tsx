@@ -1,6 +1,6 @@
-import type { ColumnDef } from "@tanstack/react-table";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { DataTableColumnDef } from "@/components/ui/data-table";
 import { Kbd } from "@/components/ui/kbd";
 import {
 	Tooltip,
@@ -23,7 +23,7 @@ export function createKeybindColumns({
 	variables,
 	onEdit,
 	onDelete,
-}: CreateKeybindColumnsOptions): ColumnDef<Keybind>[] {
+}: CreateKeybindColumnsOptions): DataTableColumnDef<Keybind>[] {
 	return [
 		{
 			accessorKey: "modifiers",
@@ -58,7 +58,10 @@ export function createKeybindColumns({
 			accessorKey: "params",
 			header: "Command",
 			cell: ({ row }) => (
-				<CommandWithVariables command={row.original.params} variables={variables} />
+				<CommandWithVariables
+					command={row.original.params}
+					variables={variables}
+				/>
 			),
 		},
 		{

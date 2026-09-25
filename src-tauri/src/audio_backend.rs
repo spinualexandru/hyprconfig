@@ -88,7 +88,9 @@ fn parse_device_line(line: &str, device_type: &str) -> Option<AudioDevice> {
     // Extract volume if present (format: [vol: 0.30])
     let (description, _inline_volume) = if let Some(vol_start) = rest.find("[vol:") {
         let desc = rest[..vol_start].trim();
-        let vol_end = rest[vol_start..].find(']').unwrap_or(rest.len() - vol_start);
+        let vol_end = rest[vol_start..]
+            .find(']')
+            .unwrap_or(rest.len() - vol_start);
         let vol_str = &rest[vol_start + 5..vol_start + vol_end];
         let vol: f32 = vol_str.trim().parse().unwrap_or(0.0);
         (desc, Some(vol))
@@ -110,7 +112,9 @@ fn parse_device_line(line: &str, device_type: &str) -> Option<AudioDevice> {
 /// Parse a stream line from wpctl status
 /// Format: "     64. firefox: AudioStream [vol: 0.50]"
 fn parse_stream_line(line: &str) -> Option<AudioStream> {
-    let trimmed = line.trim_start_matches(&[' ', '│', '├', '└', '─'][..]).trim();
+    let trimmed = line
+        .trim_start_matches(&[' ', '│', '├', '└', '─'][..])
+        .trim();
 
     // Find the ID (number before the dot)
     let dot_pos = trimmed.find('.')?;
@@ -156,22 +160,22 @@ fn get_pactl_streams() -> Vec<AudioStream> {
         // New sink input starts
         if trimmed.starts_with("Sink Input #") {
             // Save previous stream if exists
-            if let Some(stream) = current_stream.take() {
-                if !stream.app_name.is_empty() {
-                    streams.push(stream);
-                }
+            if let Some(stream) = current_stream.take()
+                && !stream.app_name.is_empty()
+            {
+                streams.push(stream);
             }
             // Parse ID from "Sink Input #123"
-            if let Some(id_str) = trimmed.strip_prefix("Sink Input #") {
-                if let Ok(id) = id_str.parse::<u32>() {
-                    current_stream = Some(AudioStream {
-                        id,
-                        app_name: String::new(),
-                        media_name: None,
-                        volume: 1.0,
-                        muted: false,
-                    });
-                }
+            if let Some(id_str) = trimmed.strip_prefix("Sink Input #")
+                && let Ok(id) = id_str.parse::<u32>()
+            {
+                current_stream = Some(AudioStream {
+                    id,
+                    app_name: String::new(),
+                    media_name: None,
+                    volume: 1.0,
+                    muted: false,
+                });
             }
         } else if let Some(ref mut stream) = current_stream {
             // Parse properties
@@ -179,10 +183,10 @@ fn get_pactl_streams() -> Vec<AudioStream> {
                 // Format: "Volume: front-left: 65536 / 100% / 0.00 dB, ..."
                 if let Some(pct_start) = trimmed.find('/') {
                     let after_slash = &trimmed[pct_start + 1..];
-                    if let Some(pct_end) = after_slash.find('%') {
-                        if let Ok(pct) = after_slash[..pct_end].trim().parse::<f32>() {
-                            stream.volume = pct / 100.0;
-                        }
+                    if let Some(pct_end) = after_slash.find('%')
+                        && let Ok(pct) = after_slash[..pct_end].trim().parse::<f32>()
+                    {
+                        stream.volume = pct / 100.0;
                     }
                 }
             } else if trimmed.starts_with("Mute:") {
@@ -207,10 +211,10 @@ fn get_pactl_streams() -> Vec<AudioStream> {
     }
 
     // Don't forget the last stream
-    if let Some(stream) = current_stream {
-        if !stream.app_name.is_empty() {
-            streams.push(stream);
-        }
+    if let Some(stream) = current_stream
+        && !stream.app_name.is_empty()
+    {
+        streams.push(stream);
     }
 
     streams
@@ -257,8 +261,14 @@ fn get_pw_dump_streams(sink_ids: &[u32], source_ids: &[u32]) -> Vec<AudioStream>
             };
 
             // Check if this is an audio node
-            let media_type = props.get("media.type").and_then(|m| m.as_str()).unwrap_or("");
-            let media_class = props.get("media.class").and_then(|m| m.as_str()).unwrap_or("");
+            let media_type = props
+                .get("media.type")
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
+            let media_class = props
+                .get("media.class")
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
 
             // Skip non-audio nodes
             if media_type != "Audio" && !media_class.contains("Audio") {
@@ -490,10 +500,10 @@ pub fn set_volume(node_id: u32, volume: f32) -> Result<(), String> {
         .args(["set-volume", &node_id.to_string(), &format!("{:.2}", vol)])
         .output();
 
-    if let Ok(output) = wpctl_result {
-        if output.status.success() {
-            return Ok(());
-        }
+    if let Ok(output) = wpctl_result
+        && output.status.success()
+    {
+        return Ok(());
     }
 
     // If wpctl fails, try pactl (for sink-input streams)
@@ -525,10 +535,10 @@ pub fn set_mute(node_id: u32, muted: bool) -> Result<(), String> {
         .args(["set-mute", &node_id.to_string(), mute_val])
         .output();
 
-    if let Ok(output) = wpctl_result {
-        if output.status.success() {
-            return Ok(());
-        }
+    if let Ok(output) = wpctl_result
+        && output.status.success()
+    {
+        return Ok(());
     }
 
     // If wpctl fails, try pactl (for sink-input streams)

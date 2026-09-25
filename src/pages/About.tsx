@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SystemInfoSkeleton } from "@/components/about/SystemInfoSkeleton";
 import { InfoField } from "@/components/about/InfoField";
 import { DiskSpaceField } from "@/components/about/DiskSpaceField";
@@ -33,14 +33,11 @@ export default function About() {
 	const [cachedSystemInfo, setCachedSystemInfo] = useState<SystemInfo | null>(
 		null,
 	);
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(true);
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
-	const loadSystemInfo = async () => {
-		setLoading(true);
-		setError(null);
-
+	const fetchSystemInfo = useCallback(() => {
 		invoke<SystemInfo>("get_system_info")
 			.then((info) => {
 				setSystemInfo(info);
@@ -48,25 +45,29 @@ export default function About() {
 			})
 			.catch((err) => {
 				setError(err as string);
-				// Keep showing cached data if available
-				if (!cachedSystemInfo) {
-					setSystemInfo(null);
-				}
 			})
 			.finally(() => {
 				setLoading(false);
 				setInitialLoad(false);
 			});
-	};
+	}, []);
 
 	useEffect(() => {
-		loadSystemInfo();
-	}, []);
+		fetchSystemInfo();
+	}, [fetchSystemInfo]);
+
+	const loadSystemInfo = useCallback(() => {
+		setLoading(true);
+		setError(null);
+		fetchSystemInfo();
+	}, [fetchSystemInfo]);
 
 	return (
 		<div className="p-6 space-y-6">
 			<div>
-				<h1 className="text-3xl font-bold tracking-tight text-foreground">Hyprconfig</h1>
+				<h1 className="text-3xl font-bold tracking-tight text-foreground">
+					Hyprconfig
+				</h1>
 				<p className="text-muted-foreground mt-2">Version 0.1.0</p>
 				<p className="text-muted-foreground mt-2">
 					Hyprconfig is not an official Hyprland project and is not affiliated

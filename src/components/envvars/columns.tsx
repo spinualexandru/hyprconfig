@@ -1,6 +1,6 @@
-import type { ColumnDef } from "@tanstack/react-table";
 import { Trash2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { DataTableColumnDef } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import type { EnvVar } from "@/types/envvars";
@@ -27,7 +27,7 @@ export function createEnvVarColumns({
 	onCancelEdit,
 	onEditValueChange,
 	onDelete,
-}: CreateEnvVarColumnsOptions): ColumnDef<EnvVar>[] {
+}: CreateEnvVarColumnsOptions): DataTableColumnDef<EnvVar>[] {
 	return [
 		{
 			accessorKey: "name",
@@ -67,7 +67,9 @@ export function createEnvVarColumns({
 							<Button
 								size="icon"
 								variant="ghost"
-								onClick={() => onSaveEdit(row.original.index, row.original.name)}
+								onClick={() =>
+									onSaveEdit(row.original.index, row.original.name)
+								}
 								disabled={editing.editLoading}
 							>
 								<Check className="h-4 w-4" />
@@ -85,12 +87,14 @@ export function createEnvVarColumns({
 				}
 
 				return (
-					<code
-						className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm cursor-pointer hover:bg-muted/80"
+					<button
+						type="button"
+						title="Click to edit"
+						className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] text-left font-mono text-sm cursor-pointer hover:bg-muted/80"
 						onClick={() => onStartEdit(row.index, row.original.value)}
 					>
-						{row.original.value}
-					</code>
+						<code>{row.original.value}</code>
+					</button>
 				);
 			},
 		},

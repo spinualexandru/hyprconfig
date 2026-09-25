@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use toml_edit::{value, DocumentMut};
+use toml_edit::{DocumentMut, value};
 
 /// Matugen preferences structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -24,8 +24,8 @@ fn get_config_path() -> Result<PathBuf, String> {
         PathBuf::from(xdg_config)
     } else {
         // Fallback to ~/.config
-        let home_dir = std::env::var("HOME")
-            .map_err(|_| "Could not determine home directory".to_string())?;
+        let home_dir =
+            std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
         PathBuf::from(home_dir).join(".config")
     };
 
@@ -351,8 +351,8 @@ fn get_theme_css_path() -> Result<PathBuf, String> {
     let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
         PathBuf::from(xdg_config)
     } else {
-        let home_dir = std::env::var("HOME")
-            .map_err(|_| "Could not determine home directory".to_string())?;
+        let home_dir =
+            std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
         PathBuf::from(home_dir).join(".config")
     };
 
@@ -368,8 +368,8 @@ fn get_theme_css_path() -> Result<PathBuf, String> {
 
 /// Get the matugen template file path (~/.config/matugen/templates/hyprconfig.css)
 fn get_matugen_template_path() -> Result<PathBuf, String> {
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Could not determine home directory".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
     let templates_dir = PathBuf::from(home_dir)
         .join(".config")
@@ -394,8 +394,7 @@ pub fn get_theme_css() -> Result<String, String> {
             .map_err(|e| format!("Failed to create default theme CSS: {}", e))?;
     }
 
-    fs::read_to_string(&theme_path)
-        .map_err(|e| format!("Failed to read theme CSS: {}", e))
+    fs::read_to_string(&theme_path).map_err(|e| format!("Failed to read theme CSS: {}", e))
 }
 
 /// Tauri command to ensure matugen template exists

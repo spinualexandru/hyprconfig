@@ -19,10 +19,10 @@ pub struct HyprpaperConfig {
 }
 
 fn expand_tilde(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{}/{}", home, rest);
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{}/{}", home, rest);
     }
     path.to_string()
 }
@@ -235,10 +235,10 @@ fn write_hyprpaper_config(config_path: &Path, content: impl AsRef<[u8]>) -> Resu
 pub fn get_hyprpaper_config() -> Result<HyprpaperConfig, String> {
     let mut wallpapers = read_hyprpaper_wallpapers()?;
 
-    if wallpapers.is_empty() {
-        if let Some(wallpaper) = get_noctalia_wallpaper() {
-            wallpapers.push(wallpaper);
-        }
+    if wallpapers.is_empty()
+        && let Some(wallpaper) = get_noctalia_wallpaper()
+    {
+        wallpapers.push(wallpaper);
     }
 
     Ok(HyprpaperConfig { wallpapers })

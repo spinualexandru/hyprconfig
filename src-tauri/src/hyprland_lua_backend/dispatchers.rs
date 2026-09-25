@@ -1099,18 +1099,19 @@ pub(super) fn lua_string_expr_with_vars(value: &str, scope: &HashSet<String>) ->
     let mut i = 0usize;
 
     while i < chars.len() {
-        if chars[i] == '$' && chars.get(i + 1) == Some(&'{') {
-            if let Some(close) = chars[i + 2..].iter().position(|c| *c == '}') {
-                let name = chars[i + 2..i + 2 + close].iter().collect::<String>();
-                if scope.contains(&name) {
-                    if !literal.is_empty() {
-                        parts.push(lua_quote(&literal));
-                        literal.clear();
-                    }
-                    parts.push(name);
-                    i += close + 3;
-                    continue;
+        if chars[i] == '$'
+            && chars.get(i + 1) == Some(&'{')
+            && let Some(close) = chars[i + 2..].iter().position(|c| *c == '}')
+        {
+            let name = chars[i + 2..i + 2 + close].iter().collect::<String>();
+            if scope.contains(&name) {
+                if !literal.is_empty() {
+                    parts.push(lua_quote(&literal));
+                    literal.clear();
                 }
+                parts.push(name);
+                i += close + 3;
+                continue;
             }
         }
         if chars[i] == '$' {

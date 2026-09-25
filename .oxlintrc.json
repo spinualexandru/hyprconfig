@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "builtin": true,
+    "browser": true
+  },
+  "rules": {
+    "react-hooks/exhaustive-deps": "error",
+
+    // Inline cell editors intentionally focus their input when opened.
+    "jsx-a11y/no-autofocus": "off",
+    // Flags role="img" on inline SVG icons, which is the correct pattern there.
+    "jsx-a11y/prefer-tag-over-role": "off"
+  }
+}

@@ -29,14 +29,14 @@ pub struct HyprlandConfig {
 /// `hypr/hyprland.lua`. Hyprland removed `hyprland.conf` support after 0.56, so the
 /// legacy file is only used when no Lua config exists yet.
 pub fn get_preferred_config() -> Result<HyprlandConfig, String> {
-    if let Ok(path) = std::env::var("HYPRLAND_CONFIG") {
-        if !path.trim().is_empty() {
-            let path = PathBuf::from(path);
-            return Ok(HyprlandConfig {
-                format: format_for_path(&path),
-                path,
-            });
-        }
+    if let Ok(path) = std::env::var("HYPRLAND_CONFIG")
+        && !path.trim().is_empty()
+    {
+        let path = PathBuf::from(path);
+        return Ok(HyprlandConfig {
+            format: format_for_path(&path),
+            path,
+        });
     }
 
     let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
@@ -771,36 +771,37 @@ pub fn delete_env_var(path: &Path, index: usize) -> Result<(), String> {
 // Monitors
 // ============================================================================
 
-fn monitor_fields(
-    width: u16,
-    height: u16,
-    refresh_rate: f32,
-    x: i32,
-    y: i32,
-    scale: f32,
-) -> Vec<(String, String)> {
+/// Mode, position and scale for a single output.
+pub struct MonitorLayout {
+    pub width: u16,
+    pub height: u16,
+    pub refresh_rate: f32,
+    pub x: i32,
+    pub y: i32,
+    pub scale: f32,
+}
+
+fn monitor_fields(layout: &MonitorLayout) -> Vec<(String, String)> {
     vec![
         (
             "mode".to_string(),
-            lua_quote(&format!("{}x{}@{:.2}Hz", width, height, refresh_rate)),
+            lua_quote(&format!(
+                "{}x{}@{:.2}Hz",
+                layout.width, layout.height, layout.refresh_rate
+            )),
         ),
-        ("position".to_string(), lua_quote(&format!("{}x{}", x, y))),
-        ("scale".to_string(), format!("{}", scale)),
+        (
+            "position".to_string(),
+            lua_quote(&format!("{}x{}", layout.x, layout.y)),
+        ),
+        ("scale".to_string(), format!("{}", layout.scale)),
     ]
 }
 
 /// Lua for `hyprctl eval`: `hl.monitor` merges into the existing rule for the output
 /// and schedules a monitor refresh, replacing the removed `hyprctl keyword monitor`.
-pub fn monitor_eval_code(
-    name: &str,
-    width: u16,
-    height: u16,
-    refresh_rate: f32,
-    x: i32,
-    y: i32,
-    scale: f32,
-) -> String {
-    let fields = monitor_fields(width, height, refresh_rate, x, y, scale)
+pub fn monitor_eval_code(name: &str, layout: &MonitorLayout) -> String {
+    let fields = monitor_fields(layout)
         .into_iter()
         .map(|(key, value)| format!("{} = {}", key, value))
         .collect::<Vec<_>>();
@@ -816,15 +817,10 @@ pub fn monitor_eval_code(
 pub fn save_monitor_settings(
     path: &Path,
     name: String,
-    width: u16,
-    height: u16,
-    refresh_rate: f32,
-    x: i32,
-    y: i32,
-    scale: f32,
+    layout: &MonitorLayout,
 ) -> Result<(), String> {
     let project = read_lua_project(path)?;
-    let fields = monitor_fields(width, height, refresh_rate, x, y, scale);
+    let fields = monitor_fields(layout);
 
     for source in &project.sources {
         for statement in find_calls(source, "hl.monitor") {
@@ -903,7 +899,11 @@ pub fn get_windowrule(path: &Path, name: String) -> Result<Windowrule, String> {
     let project = read_lua_project(path)?;
     let statement = find_rule_statement(&project, "window_rule", &name)
         .ok_or_else(|| format!("Windowrule '{}' not found", name))?;
-    let (enabled, matches, effects) = rule_properties(&statement, &project.variables);
+    let RuleProperties {
+        enabled,
+        matches,
+        effects,
+    } = rule_properties(&statement, &project.variables);
 
     Ok(Windowrule {
         name,
@@ -931,7 +931,11 @@ pub fn get_layerrule(path: &Path, name: String) -> Result<Layerrule, String> {
     let project = read_lua_project(path)?;
     let statement = find_rule_statement(&project, "layer_rule", &name)
         .ok_or_else(|| format!("Layerrule '{}' not found", name))?;
-    let (enabled, matches, effects) = rule_properties(&statement, &project.variables);
+    let RuleProperties {
+        enabled,
+        matches,
+        effects,
+    } = rule_properties(&statement, &project.variables);
 
     Ok(Layerrule {
         name,
@@ -963,12 +967,18 @@ pub fn delete_layerrule(path: &Path, name: String) -> Result<(), String> {
     delete_rule(path, "layer_rule", &name)
 }
 
+struct RuleProperties {
+    enabled: bool,
+    matches: Vec<(String, String)>,
+    effects: Vec<(String, String)>,
+}
+
 /// Every non-meta key is reported. Hyprland also accepts effects registered by plugins,
 /// so filtering against a fixed list would hide valid rules.
 fn rule_properties(
     statement: &LuaStatement,
     variables: &HashMap<String, String>,
-) -> (bool, Vec<(String, String)>, Vec<(String, String)>) {
+) -> RuleProperties {
     let table = statement.args_list().first().copied().unwrap_or("");
     let fields = parse_lua_table_fields(table);
     let enabled = table_value(&fields, "enabled").is_none_or(|value| value.trim() != "false");
@@ -986,16 +996,21 @@ fn rule_properties(
         .filter(|(key, _)| !matches!(key.as_str(), "name" | "enabled" | "match"))
         .map(|(key, value)| (key, rule_value_to_display(&value, variables)))
         .collect();
-    (enabled, matches, effects)
+    RuleProperties {
+        enabled,
+        matches,
+        effects,
+    }
 }
 
 /// Resolves variable references (`workspace = gamingWorkspace`) to their value.
 fn rule_value_to_display(value: &str, variables: &HashMap<String, String>) -> String {
     let value = value.trim();
-    if parse_lua_string_literal(value).is_none() && !value.starts_with('{') {
-        if let Some(resolved) = eval_lua_string_expr(value, variables).filter(|v| !v.is_empty()) {
-            return resolved;
-        }
+    if parse_lua_string_literal(value).is_none()
+        && !value.starts_with('{')
+        && let Some(resolved) = eval_lua_string_expr(value, variables).filter(|v| !v.is_empty())
+    {
+        return resolved;
     }
     lua_value_to_display(value)
 }
@@ -1259,10 +1274,10 @@ fn collect_lua_files_by_stem(dir: &Path, stem: &str, out: &mut Vec<PathBuf>) {
 }
 
 fn expand_tilde(value: &str) -> String {
-    if let Some(rest) = value.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{}/{}", home, rest);
-        }
+    if let Some(rest) = value.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{}/{}", home, rest);
     }
     value.to_string()
 }
@@ -1292,10 +1307,10 @@ fn find_lua_import_exprs(masked: &str) -> Vec<(&'static str, String)> {
                         imports.push((loader, inner[start..end].to_string()));
                     }
                 }
-            } else if loader == "require" {
-                if let Some(end) = string_literal_end(masked.as_bytes(), rest_start) {
-                    imports.push((loader, masked[rest_start..end].to_string()));
-                }
+            } else if loader == "require"
+                && let Some(end) = string_literal_end(masked.as_bytes(), rest_start)
+            {
+                imports.push((loader, masked[rest_start..end].to_string()));
             }
         }
     }
@@ -1319,10 +1334,10 @@ fn find_loader_module_names(masked: &str) -> Vec<String> {
 
             if let Some(close) = find_matching_delimiter(masked, open, b'(', b')') {
                 let inner = &masked[open + 1..close];
-                if let Some(&(start, end)) = split_top_level_spans(inner, b',').first() {
-                    if let Some(name) = parse_lua_string_literal(&inner[start..end]) {
-                        names.push(name);
-                    }
+                if let Some(&(start, end)) = split_top_level_spans(inner, b',').first()
+                    && let Some(name) = parse_lua_string_literal(&inner[start..end])
+                {
+                    names.push(name);
                 }
                 search_from = close + 1;
             } else {
@@ -1456,7 +1471,7 @@ fn table_insert_edit(
 fn reload_hyprland() -> Result<(), String> {
     #[cfg(test)]
     {
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(test))]
@@ -1577,6 +1592,24 @@ fn validate_env_name(name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn layout(
+        width: u16,
+        height: u16,
+        refresh_rate: f32,
+        x: i32,
+        y: i32,
+        scale: f32,
+    ) -> MonitorLayout {
+        MonitorLayout {
+            width,
+            height,
+            refresh_rate,
+            x,
+            y,
+            scale,
+        }
+    }
 
     fn source(contents: &str) -> LuaSource {
         LuaSource::new(PathBuf::from("hyprland.lua"), contents.to_string())
@@ -1706,7 +1739,11 @@ hl.window_rule({
             "suppress-maximize-events",
         )
         .unwrap();
-        let (enabled, matches, effects) = rule_properties(&statement, &HashMap::new());
+        let RuleProperties {
+            enabled,
+            matches,
+            effects,
+        } = rule_properties(&statement, &HashMap::new());
 
         assert!(enabled);
         assert!(matches.contains(&("class".to_string(), ".*".to_string())));
@@ -1765,7 +1802,9 @@ hl.layer_rule({ match = { namespace = "^my-overlay$" }, no_anim = true })
 
         let unnamed =
             find_rule_statement(&project, "window_rule", "unnamed window rule #1").unwrap();
-        let (_, matches, effects) = rule_properties(&unnamed, &project.variables);
+        let RuleProperties {
+            matches, effects, ..
+        } = rule_properties(&unnamed, &project.variables);
         assert_eq!(
             matches,
             vec![("class".to_string(), "hyprland-run".to_string())]
@@ -1787,12 +1826,12 @@ for _, m in ipairs(floatApps) do hl.window_rule({ match = m, float = true }) end
 "#,
         );
         let rules = rule_labels(&project, "window_rule");
-        let (_, _, effects) = rule_properties(&rules[0].1, &project.variables);
+        let effects = rule_properties(&rules[0].1, &project.variables).effects;
         assert_eq!(
             effects,
             vec![("workspace".to_string(), "name:gaming".to_string())]
         );
-        let (_, matches, _) = rule_properties(&rules[1].1, &project.variables);
+        let matches = rule_properties(&rules[1].1, &project.variables).matches;
         assert_eq!(matches, vec![("match".to_string(), "m".to_string())]);
     }
 
@@ -2158,9 +2197,24 @@ hl.monitor({ output = "HDMI-A-1", bitdepth = 10 })
 "#,
         );
 
-        save_monitor_settings(&config, "DP-1".into(), 2560, 1440, 164.96, 0, 0, 1.25).unwrap();
-        save_monitor_settings(&config, "HDMI-A-1".into(), 1920, 1080, 60.0, 2560, 0, 1.0).unwrap();
-        save_monitor_settings(&config, "eDP-1".into(), 1920, 1200, 60.0, 0, 1440, 1.5).unwrap();
+        save_monitor_settings(
+            &config,
+            "DP-1".into(),
+            &layout(2560, 1440, 164.96, 0, 0, 1.25),
+        )
+        .unwrap();
+        save_monitor_settings(
+            &config,
+            "HDMI-A-1".into(),
+            &layout(1920, 1080, 60.0, 2560, 0, 1.0),
+        )
+        .unwrap();
+        save_monitor_settings(
+            &config,
+            "eDP-1".into(),
+            &layout(1920, 1200, 60.0, 0, 1440, 1.5),
+        )
+        .unwrap();
 
         assert_eq!(
             dir.read("hyprland.lua"),
@@ -2183,7 +2237,7 @@ hl.monitor({
         );
 
         assert_eq!(
-            monitor_eval_code("DP-1", 1920, 1080, 60.0, 0, 0, 1.0),
+            monitor_eval_code("DP-1", &layout(1920, 1080, 60.0, 0, 0, 1.0)),
             "hl.monitor({ output = \"DP-1\", mode = \"1920x1080@60.00Hz\", position = \"0x0\", scale = 1 })"
         );
     }

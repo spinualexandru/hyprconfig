@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DisplayCardSkeleton } from "@/components/displays/DisplaySkeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,24 +59,19 @@ interface MonitorSettings {
 export default function Displays() {
 	const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
 	const [cachedMonitors, setCachedMonitors] = useState<MonitorInfo[]>([]);
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(true);
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [monitorSettings, setMonitorSettings] = useState<MonitorSettings>({});
 	const [hasChanges, setHasChanges] = useState(false);
 	const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 	const [countdown, setCountdown] = useState(10);
-	const [originalMonitorData, setOriginalMonitorData] = useState<MonitorInfo[]>([]);
+	const [originalMonitorData, setOriginalMonitorData] = useState<MonitorInfo[]>(
+		[],
+	);
 	const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-	useEffect(() => {
-		loadMonitors();
-	}, []);
-
-	const loadMonitors = async () => {
-		setLoading(true);
-		setError(null);
-
+	const fetchMonitors = useCallback(() => {
 		invoke<MonitorInfo[]>("get_monitors")
 			.then((result) => {
 				setMonitors(result);
@@ -96,16 +91,22 @@ export default function Displays() {
 			})
 			.catch((err) => {
 				setError(err as string);
-				// Keep showing cached data if available
-				if (cachedMonitors.length === 0) {
-					setMonitors([]);
-				}
 			})
 			.finally(() => {
 				setLoading(false);
 				setInitialLoad(false);
 			});
-	};
+	}, []);
+
+	useEffect(() => {
+		fetchMonitors();
+	}, [fetchMonitors]);
+
+	const loadMonitors = useCallback(() => {
+		setLoading(true);
+		setError(null);
+		fetchMonitors();
+	}, [fetchMonitors]);
 
 	const handleResolutionChange = (monitorId: number, resolution: string) => {
 		// Find the monitor to get available refresh rates for the new resolution
@@ -153,23 +154,6 @@ export default function Displays() {
 			}
 		};
 	}, []);
-
-	// Countdown effect
-	useEffect(() => {
-		if (showConfirmDialog && countdown > 0) {
-			countdownRef.current = setInterval(() => {
-				setCountdown((c) => c - 1);
-			}, 1000);
-			return () => {
-				if (countdownRef.current) {
-					clearInterval(countdownRef.current);
-				}
-			};
-		}
-		if (countdown === 0 && showConfirmDialog) {
-			handleRevert();
-		}
-	}, [showConfirmDialog, countdown]);
 
 	const handleRevert = useCallback(async () => {
 		// Clear timer
@@ -244,17 +228,19 @@ export default function Displays() {
 		}
 
 		// Update original data to match new settings
-		setOriginalMonitorData(displayMonitors.map((m) => {
-			const settings = monitorSettings[m.id];
-			if (!settings) return m;
-			const [width, height] = settings.resolution.split("x").map(Number);
-			return {
-				...m,
-				width,
-				height,
-				refresh_rate: parseFloat(settings.refreshRate),
-			};
-		}));
+		setOriginalMonitorData(
+			displayMonitors.map((m) => {
+				const settings = monitorSettings[m.id];
+				if (!settings) return m;
+				const [width, height] = settings.resolution.split("x").map(Number);
+				return {
+					...m,
+					width,
+					height,
+					refresh_rate: parseFloat(settings.refreshRate),
+				};
+			}),
+		);
 
 		setHasChanges(false);
 		setShowConfirmDialog(false);
@@ -287,9 +273,17 @@ export default function Displays() {
 			}
 		}
 
-		// Show confirmation dialog with countdown
+		// Show confirmation dialog and revert automatically unless confirmed
 		setCountdown(10);
 		setShowConfirmDialog(true);
+		let remaining = 10;
+		countdownRef.current = setInterval(() => {
+			remaining -= 1;
+			setCountdown(remaining);
+			if (remaining === 0) {
+				handleRevert();
+			}
+		}, 1000);
 	};
 
 	const handleCancel = () => {
@@ -313,7 +307,9 @@ export default function Displays() {
 		<div className={`p-6 space-y-6 ${hasChanges ? "pb-24" : ""}`}>
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-3xl font-bold tracking-tight text-foreground">Displays</h1>
+					<h1 className="text-3xl font-bold tracking-tight text-foreground">
+						Displays
+					</h1>
 					<p className="text-muted-foreground mt-2">
 						Configure your display settings
 					</p>
@@ -486,23 +482,28 @@ export default function Displays() {
 			)}
 
 			{/* Confirmation Dialog */}
-			<Dialog open={showConfirmDialog} onOpenChange={(open) => {
-				if (!open) {
-					handleRevert();
-				}
-			}}>
+			<Dialog
+				open={showConfirmDialog}
+				onOpenChange={(open) => {
+					if (!open) {
+						handleRevert();
+					}
+				}}
+			>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Keep these display settings?</DialogTitle>
 						<DialogDescription>
-							Your display settings have been changed. If you can see this dialog,
-							the new settings are working. Click "Keep Changes" to save them, or
-							they will revert automatically.
+							Your display settings have been changed. If you can see this
+							dialog, the new settings are working. Click "Keep Changes" to save
+							them, or they will revert automatically.
 						</DialogDescription>
 					</DialogHeader>
 					<div className="flex items-center justify-center py-4">
 						<div className="text-center">
-							<div className="text-4xl font-bold text-foreground">{countdown}</div>
+							<div className="text-4xl font-bold text-foreground">
+								{countdown}
+							</div>
 							<p className="text-sm text-muted-foreground mt-1">
 								Reverting in {countdown} second{countdown !== 1 ? "s" : ""}
 							</p>

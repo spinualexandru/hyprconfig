@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Terminal, RefreshCw, Plus } from "lucide-react";
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -57,7 +57,7 @@ function EnvVarsTableSkeleton() {
 export default function EnvVars() {
 	const [envVars, setEnvVars] = useState<EnvVar[]>([]);
 	const [cachedEnvVars, setCachedEnvVars] = useState<EnvVar[]>([]);
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(true);
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
@@ -73,30 +73,30 @@ export default function EnvVars() {
 	const [editValue, setEditValue] = useState("");
 	const [editLoading, setEditLoading] = useState(false);
 
-	useEffect(() => {
-		loadEnvVars();
-	}, []);
-
-	const loadEnvVars = async () => {
-		setLoading(true);
-		setError(null);
-
+	const fetchEnvVars = useCallback(() => {
 		invoke<EnvVar[]>("get_env_vars")
 			.then((result) => {
 				setEnvVars(result);
-				setCachedEnvVars(result);
+				setCachedEnvVars(result); // Cache for next time
 			})
 			.catch((err) => {
 				setError(err as string);
-				if (cachedEnvVars.length === 0) {
-					setEnvVars([]);
-				}
 			})
 			.finally(() => {
 				setLoading(false);
 				setInitialLoad(false);
 			});
-	};
+	}, []);
+
+	useEffect(() => {
+		fetchEnvVars();
+	}, [fetchEnvVars]);
+
+	const loadEnvVars = useCallback(() => {
+		setLoading(true);
+		setError(null);
+		fetchEnvVars();
+	}, [fetchEnvVars]);
 
 	const handleAddEnvVar = async () => {
 		if (!newVarName.trim()) {
@@ -132,32 +132,38 @@ export default function EnvVars() {
 		setEditValue("");
 	};
 
-	const handleSaveEdit = async (envIndex: number, name: string) => {
-		setEditLoading(true);
+	const handleSaveEdit = useCallback(
+		async (envIndex: number, name: string) => {
+			setEditLoading(true);
 
-		invoke("edit_env_var", { index: envIndex, name, value: editValue })
-			.then(() => {
-				setEditingRowIndex(null);
-				setEditValue("");
-				loadEnvVars();
-			})
-			.catch((err) => {
-				setError(err as string);
-			})
-			.finally(() => {
-				setEditLoading(false);
-			});
-	};
+			invoke("edit_env_var", { index: envIndex, name, value: editValue })
+				.then(() => {
+					setEditingRowIndex(null);
+					setEditValue("");
+					loadEnvVars();
+				})
+				.catch((err) => {
+					setError(err as string);
+				})
+				.finally(() => {
+					setEditLoading(false);
+				});
+		},
+		[editValue, loadEnvVars],
+	);
 
-	const handleDeleteEnvVar = async (envIndex: number) => {
-		invoke("delete_env_var", { index: envIndex })
-			.then(() => {
-				loadEnvVars();
-			})
-			.catch((err) => {
-				setError(err as string);
-			});
-	};
+	const handleDeleteEnvVar = useCallback(
+		async (envIndex: number) => {
+			invoke("delete_env_var", { index: envIndex })
+				.then(() => {
+					loadEnvVars();
+				})
+				.catch((err) => {
+					setError(err as string);
+				});
+		},
+		[loadEnvVars],
+	);
 
 	const displayEnvVars =
 		loading && cachedEnvVars.length > 0 ? cachedEnvVars : envVars;
@@ -176,7 +182,13 @@ export default function EnvVars() {
 				onEditValueChange: setEditValue,
 				onDelete: handleDeleteEnvVar,
 			}),
-		[editingRowIndex, editValue, editLoading],
+		[
+			editingRowIndex,
+			editValue,
+			editLoading,
+			handleSaveEdit,
+			handleDeleteEnvVar,
+		],
 	);
 
 	return (

@@ -1,16 +1,30 @@
-use std::path::Path;
 use hyprlang::{Config, ConfigValue, SpecialCategoryDescriptor};
+use std::path::Path;
 
 fn register_hyprpaper_config(config: &mut Config) {
-    let keywords = vec!["preload", "splash", "splash_offset", "splash_opacity", "ipc"];
+    let keywords = vec![
+        "preload",
+        "splash",
+        "splash_offset",
+        "splash_opacity",
+        "ipc",
+    ];
     for keyword in keywords {
         config.register_handler_fn(keyword, |_ctx| Ok(()));
     }
 
     config.register_special_category(SpecialCategoryDescriptor::anonymous("wallpaper"));
-    config.register_special_category_value("wallpaper", "monitor", ConfigValue::String(String::new()));
+    config.register_special_category_value(
+        "wallpaper",
+        "monitor",
+        ConfigValue::String(String::new()),
+    );
     config.register_special_category_value("wallpaper", "path", ConfigValue::String(String::new()));
-    config.register_special_category_value("wallpaper", "fit_mode", ConfigValue::String("cover".to_string()));
+    config.register_special_category_value(
+        "wallpaper",
+        "fit_mode",
+        ConfigValue::String("cover".to_string()),
+    );
 }
 
 fn main() {
@@ -58,7 +72,10 @@ fn main() {
                         .get("fit_mode")
                         .and_then(|v| v.as_string().ok())
                         .unwrap_or("cover");
-                    println!("  [{}] monitor={}, path={}, fit_mode={}", key, monitor, path, fit_mode);
+                    println!(
+                        "  [{}] monitor={}, path={}, fit_mode={}",
+                        key, monitor, path, fit_mode
+                    );
                 }
             }
         }

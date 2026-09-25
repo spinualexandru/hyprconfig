@@ -59,7 +59,7 @@ try {
 try {
   execSync('update-desktop-database ~/.local/share/applications 2>/dev/null', { stdio: 'ignore' });
   console.log('✓ Updated desktop database');
-} catch (error) {
+} catch {
   // Ignore if command doesn't exist
 }
 

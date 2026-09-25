@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NetworkInterfaceCard } from "@/components/network/NetworkInterfaceCard";
 import { NetworkInterfaceDetail } from "@/components/network/NetworkInterfaceDetail";
 import {
@@ -38,21 +38,15 @@ export default function Network() {
 	const [cachedWifiNetworks, setCachedWifiNetworks] = useState<WifiNetwork[]>(
 		[],
 	);
-	const [loadingInterfaces, setLoadingInterfaces] = useState(false);
-	const [loadingWifi, setLoadingWifi] = useState(false);
+	const [loadingInterfaces, setLoadingInterfaces] = useState(true);
+	const [loadingWifi, setLoadingWifi] = useState(true);
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [selectedInterface, setSelectedInterface] =
 		useState<NetworkInterface | null>(null);
 
-	useEffect(() => {
-		loadNetworkInfo();
-	}, []);
-
-	const scanWifiNetworks = async () => {
-		// Load WiFi networks independently (takes longer due to scan)
-		// Show cached networks immediately if available
-		setLoadingWifi(true);
+	// Load WiFi networks independently (takes longer due to scan)
+	const fetchWifiNetworks = useCallback(() => {
 		invoke<WifiNetwork[]>("scan_wifi_networks")
 			.then((result) => {
 				setWifiNetworks(result);
@@ -60,21 +54,14 @@ export default function Network() {
 			})
 			.catch(() => {
 				// Silently fail for WiFi scan (may not be available on all systems)
-				if (cachedWifiNetworks.length === 0) {
-					setWifiNetworks([]);
-				}
 			})
 			.finally(() => {
 				setLoadingWifi(false);
 				setInitialLoad(false);
 			});
-	};
+	}, []);
 
-	const loadNetworkInfo = async () => {
-		setError(null);
-
-		// Load interfaces independently
-		setLoadingInterfaces(true);
+	const fetchInterfaces = useCallback(() => {
 		invoke<NetworkInterface[]>("get_network_info")
 			.then((result) => {
 				setInterfaces(result);
@@ -86,10 +73,25 @@ export default function Network() {
 				setLoadingInterfaces(false);
 				setInitialLoad(false);
 			});
+	}, []);
 
-		// Also scan WiFi networks
+	useEffect(() => {
+		fetchInterfaces();
+		fetchWifiNetworks();
+	}, [fetchInterfaces, fetchWifiNetworks]);
+
+	// Show cached networks while rescanning if available
+	const scanWifiNetworks = useCallback(() => {
+		setLoadingWifi(true);
+		fetchWifiNetworks();
+	}, [fetchWifiNetworks]);
+
+	const loadNetworkInfo = useCallback(() => {
+		setError(null);
+		setLoadingInterfaces(true);
+		fetchInterfaces();
 		scanWifiNetworks();
-	};
+	}, [fetchInterfaces, scanWifiNetworks]);
 
 	// Show detail view if an interface is selected
 	if (selectedInterface) {
@@ -113,7 +115,9 @@ export default function Network() {
 		<div className="p-6 space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-3xl font-bold tracking-tight text-foreground">Network</h1>
+					<h1 className="text-3xl font-bold tracking-tight text-foreground">
+						Network
+					</h1>
 					<p className="text-muted-foreground mt-2">
 						Network settings and configuration
 					</p>
@@ -144,7 +148,9 @@ export default function Network() {
 			{/* Network Interfaces Section */}
 			{(loadingInterfaces || interfaces.length > 0 || initialLoad) && (
 				<div className="space-y-4">
-					<h2 className="text-xl font-semibold text-foreground">Network Interfaces</h2>
+					<h2 className="text-xl font-semibold text-foreground">
+						Network Interfaces
+					</h2>
 					<div className="grid gap-4">
 						{(loadingInterfaces && interfaces.length === 0) || initialLoad ? (
 							<>
@@ -188,7 +194,9 @@ export default function Network() {
 				initialLoad) && (
 				<div className="space-y-4">
 					<div className="flex items-center justify-between">
-						<h2 className="text-xl font-semibold text-foreground">Available Networks</h2>
+						<h2 className="text-xl font-semibold text-foreground">
+							Available Networks
+						</h2>
 						<Button
 							variant="ghost"
 							size="icon"

@@ -1,8 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { FileCode, Image as ImageIcon, Palette, RefreshCw, Upload } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+	FileCode,
+	Image as ImageIcon,
+	Palette,
+	RefreshCw,
+	Upload,
+} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { reloadTheme, ensureMatugenTemplate } from "@/lib/theme-loader";
 import { Button } from "@/components/ui/button";
@@ -36,7 +42,7 @@ interface HyprpaperConfig {
 
 export default function Appearance() {
 	const [config, setConfig] = useState<HyprpaperConfig | null>(null);
-	const [loading, setLoading] = useState(false);
+	const [loading, setLoading] = useState(true);
 	const [initialLoad, setInitialLoad] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [updating, setUpdating] = useState(false);
@@ -45,32 +51,39 @@ export default function Appearance() {
 	const [matugenLightMode, setMatugenLightMode] = useState(false);
 	const [generatorType, setGeneratorType] = useState("scheme-tonal-spot");
 
-	const loadConfig = async () => {
-		setLoading(true);
-		setError(null);
-
-		try {
-			const hyprpaperConfig = await invoke<HyprpaperConfig>(
-				"get_hyprpaper_config",
-			);
-			setConfig(hyprpaperConfig);
-		} catch (err) {
-			setError(err as string);
-			setConfig(null);
-		} finally {
-			setLoading(false);
-			setInitialLoad(false);
-		}
-	};
+	const fetchConfig = useCallback(
+		() =>
+			invoke<HyprpaperConfig>("get_hyprpaper_config")
+				.then((hyprpaperConfig) => {
+					setConfig(hyprpaperConfig);
+				})
+				.catch((err) => {
+					setError(err as string);
+					setConfig(null);
+				})
+				.finally(() => {
+					setLoading(false);
+					setInitialLoad(false);
+				}),
+		[],
+	);
 
 	useEffect(() => {
-		loadConfig();
-	}, []);
+		fetchConfig();
+	}, [fetchConfig]);
+
+	const loadConfig = useCallback(() => {
+		setLoading(true);
+		setError(null);
+		return fetchConfig();
+	}, [fetchConfig]);
 
 	useEffect(() => {
 		const checkMatugen = async () => {
 			try {
-				const exists = await invoke<boolean>("tool_exists", { name: "matugen" });
+				const exists = await invoke<boolean>("tool_exists", {
+					name: "matugen",
+				});
 				setMatugenExists(exists);
 			} catch {
 				setMatugenExists(false);
@@ -106,8 +119,8 @@ export default function Appearance() {
 			const current = getCurrentWallpaper();
 			if (current?.path) {
 				const lastSlash = Math.max(
-					current.path.lastIndexOf('/'),
-					current.path.lastIndexOf('\\')
+					current.path.lastIndexOf("/"),
+					current.path.lastIndexOf("\\"),
 				);
 				if (lastSlash !== -1) {
 					defaultPath = current.path.substring(0, lastSlash);
@@ -144,7 +157,9 @@ export default function Appearance() {
 						await reloadTheme();
 						toast.success("Wallpaper updated and Matugen synced");
 					} catch (matugenErr) {
-						toast.warning(`Wallpaper updated but Matugen failed: ${matugenErr}`);
+						toast.warning(
+							`Wallpaper updated but Matugen failed: ${matugenErr}`,
+						);
 					}
 				} else {
 					toast.success("Wallpaper updated successfully");
@@ -209,7 +224,9 @@ export default function Appearance() {
 	return (
 		<div className="p-6 space-y-6">
 			<div>
-				<h1 className="text-3xl font-bold tracking-tight text-foreground">Appearance</h1>
+				<h1 className="text-3xl font-bold tracking-tight text-foreground">
+					Appearance
+				</h1>
 				<p className="text-muted-foreground mt-2">
 					Customize your wallpaper and appearance settings
 				</p>
@@ -230,7 +247,9 @@ export default function Appearance() {
 							onClick={loadConfig}
 							disabled={loading}
 						>
-							<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+							<RefreshCw
+								className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+							/>
 						</Button>
 						<Button
 							onClick={handleChangeWallpaper}
@@ -295,7 +314,9 @@ export default function Appearance() {
 									</p>
 								</div>
 								<div>
-									<p className="text-sm font-medium text-foreground">Fit Mode</p>
+									<p className="text-sm font-medium text-foreground">
+										Fit Mode
+									</p>
 									<p className="text-sm text-muted-foreground">
 										{currentWallpaper.fit_mode}
 									</p>
@@ -305,8 +326,12 @@ export default function Appearance() {
 					) : (
 						<div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
 							<ImageIcon className="w-16 h-16 mb-4" />
-							<p className="text-lg font-medium text-foreground">No wallpaper configured</p>
-							<p className="text-sm text-muted-foreground">Click "Change Wallpaper" to set one</p>
+							<p className="text-lg font-medium text-foreground">
+								No wallpaper configured
+							</p>
+							<p className="text-sm text-muted-foreground">
+								Click "Change Wallpaper" to set one
+							</p>
 						</div>
 					)}
 				</CardContent>
@@ -326,7 +351,10 @@ export default function Appearance() {
 							<div className="grid grid-cols-2 gap-6">
 								<div className="flex items-center justify-between">
 									<div className="space-y-0.5">
-										<Label htmlFor="sync-matugen" className="text-sm font-medium">
+										<Label
+											htmlFor="sync-matugen"
+											className="text-sm font-medium"
+										>
 											Enable
 										</Label>
 										<p className="text-sm text-muted-foreground">
@@ -344,11 +372,13 @@ export default function Appearance() {
 									<div className="space-y-0.5">
 										<Label
 											htmlFor="matugen-light-mode"
-											className={`text-sm font-medium ${!syncMatugen ? 'opacity-50' : ''}`}
+											className={`text-sm font-medium ${!syncMatugen ? "opacity-50" : ""}`}
 										>
 											Light Mode
 										</Label>
-										<p className={`text-sm text-muted-foreground ${!syncMatugen ? 'opacity-50' : ''}`}>
+										<p
+											className={`text-sm text-muted-foreground ${!syncMatugen ? "opacity-50" : ""}`}
+										>
 											Use light color scheme instead of dark
 										</p>
 									</div>
@@ -377,18 +407,38 @@ export default function Appearance() {
 										<SelectValue placeholder="Select generator type" />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="scheme-content">Scheme Content</SelectItem>
-										<SelectItem value="scheme-expressive">Scheme Expressive</SelectItem>
-										<SelectItem value="scheme-fidelity">Scheme Fidelity</SelectItem>
-										<SelectItem value="scheme-fruit-salad">Scheme Fruit Salad</SelectItem>
-										<SelectItem value="scheme-monochrome">Scheme Monochrome</SelectItem>
-										<SelectItem value="scheme-neutral">Scheme Neutral</SelectItem>
-										<SelectItem value="scheme-rainbow">Scheme Rainbow</SelectItem>
-										<SelectItem value="scheme-tonal-spot">Scheme Tonal Spot</SelectItem>
-										<SelectItem value="scheme-vibrant">Scheme Vibrant</SelectItem>
+										<SelectItem value="scheme-content">
+											Scheme Content
+										</SelectItem>
+										<SelectItem value="scheme-expressive">
+											Scheme Expressive
+										</SelectItem>
+										<SelectItem value="scheme-fidelity">
+											Scheme Fidelity
+										</SelectItem>
+										<SelectItem value="scheme-fruit-salad">
+											Scheme Fruit Salad
+										</SelectItem>
+										<SelectItem value="scheme-monochrome">
+											Scheme Monochrome
+										</SelectItem>
+										<SelectItem value="scheme-neutral">
+											Scheme Neutral
+										</SelectItem>
+										<SelectItem value="scheme-rainbow">
+											Scheme Rainbow
+										</SelectItem>
+										<SelectItem value="scheme-tonal-spot">
+											Scheme Tonal Spot
+										</SelectItem>
+										<SelectItem value="scheme-vibrant">
+											Scheme Vibrant
+										</SelectItem>
 									</SelectContent>
 								</Select>
-								<p className={`text-sm text-muted-foreground ${!syncMatugen ? 'opacity-50' : ''}`}>
+								<p
+									className={`text-sm text-muted-foreground ${!syncMatugen ? "opacity-50" : ""}`}
+								>
 									Color scheme generation algorithm
 								</p>
 							</div>
@@ -437,14 +487,14 @@ export default function Appearance() {
 								</Button>
 							</div>
 							<p className="text-sm text-muted-foreground mt-2">
-								Setup Template creates the matugen template at ~/.config/matugen/templates/hyprconfig.css.
-								Reload Theme runs matugen on the current wallpaper and reloads the CSS.
+								Setup Template creates the matugen template at
+								~/.config/matugen/templates/hyprconfig.css. Reload Theme runs
+								matugen on the current wallpaper and reloads the CSS.
 							</p>
 						</div>
 					</CardContent>
 				</Card>
 			)}
-
 		</div>
 	);
 }

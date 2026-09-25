@@ -1,31 +1,42 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+
+type Theme = "light" | "dark";
+
+// Module-level store so every consumer (sidebar toggle, toasts) shares one theme
+const listeners = new Set<() => void>();
+// Default to light mode
+let currentTheme: Theme =
+	localStorage.getItem("theme") === "dark" ? "dark" : "light";
+
+function subscribe(listener: () => void) {
+	listeners.add(listener);
+	return () => {
+		listeners.delete(listener);
+	};
+}
+
+function getSnapshot() {
+	return currentTheme;
+}
+
+function setTheme(theme: Theme) {
+	currentTheme = theme;
+	localStorage.setItem("theme", theme);
+	for (const listener of listeners) {
+		listener();
+	}
+}
 
 export function useTheme() {
-	const [theme, setTheme] = useState<"light" | "dark">(() => {
-		// Check localStorage first
-		const stored = localStorage.getItem("theme");
-		if (stored === "light" || stored === "dark") {
-			return stored;
-		}
-		// Default to light mode
-		return "light";
-	});
+	const theme = useSyncExternalStore(subscribe, getSnapshot);
 
 	useEffect(() => {
-		const root = document.documentElement;
-
-		if (theme === "dark") {
-			root.classList.add("dark");
-		} else {
-			root.classList.remove("dark");
-		}
-
-		localStorage.setItem("theme", theme);
+		document.documentElement.classList.toggle("dark", theme === "dark");
 	}, [theme]);
 
-	const toggleTheme = () => {
-		setTheme((prev) => (prev === "light" ? "dark" : "light"));
-	};
+	const toggleTheme = useCallback(() => {
+		setTheme(currentTheme === "light" ? "dark" : "light");
+	}, []);
 
 	return { theme, toggleTheme };
 }

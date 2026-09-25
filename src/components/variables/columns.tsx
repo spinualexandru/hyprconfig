@@ -1,6 +1,6 @@
-import type { ColumnDef } from "@tanstack/react-table";
 import { Trash2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { DataTableColumnDef } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import type { Variable } from "@/types/variables";
@@ -27,7 +27,7 @@ export function createVariableColumns({
 	onCancelEdit,
 	onEditValueChange,
 	onDelete,
-}: CreateVariableColumnsOptions): ColumnDef<Variable>[] {
+}: CreateVariableColumnsOptions): DataTableColumnDef<Variable>[] {
 	return [
 		{
 			accessorKey: "name",
@@ -85,12 +85,14 @@ export function createVariableColumns({
 				}
 
 				return (
-					<code
-						className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm cursor-pointer hover:bg-muted/80"
+					<button
+						type="button"
+						title="Click to edit"
+						className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] text-left font-mono text-sm cursor-pointer hover:bg-muted/80"
 						onClick={() => onStartEdit(row.index, row.original.value)}
 					>
-						{row.original.value}
-					</code>
+						<code>{row.original.value}</code>
+					</button>
 				);
 			},
 		},
