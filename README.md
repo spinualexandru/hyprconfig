@@ -15,16 +15,49 @@ Configure hyprland using a GUI.
 
 Works with `hyprland.lua` (the only format Hyprland reads after 0.56) and with the legacy `hyprland.conf`.
 
+Hyprconfig is a native Rust app drawn with [Rune](https://github.com/anomalyco/rune), a GPU UI
+framework (wgpu, winit). There is no web view or JavaScript.
+
 ## How to run
-```
-pnpm tauri dev -- --bin tauri-app
-```
 
-## Installation (system-wide)
+You need a recent stable Rust (built and tested with 1.99) and the Wayland and xkbcommon libraries
+(`wayland libxkbcommon` on Arch).
 
 ```
-pnpm install
+cargo run --release
 ```
+
+Changing the wallpaper opens the desktop's file chooser through the XDG desktop portal, so an
+`xdg-desktop-portal` backend with a FileChooser (`xdg-desktop-portal-gtk`, for example, next to
+`xdg-desktop-portal-hyprland`) must be running.
+
+## Installation (current user)
+
+```
+just install     # ~/.local/bin/hyprconfig, its icon and a .desktop entry
+just uninstall
+```
+
+The window's app id is `hyprconfig`, for window rules such as
+`windowrule = float, class:^(hyprconfig)$`.
+
+## Development
+
+```
+cargo test                 # unit and UI tests on Rune's headless runtime (no window, no system calls)
+just check                 # fmt, clippy and tests
+just snapshots             # render every scene to artifacts/*.png (`just snapshots light` for light)
+cargo run -- --list-scenes
+cargo run -- --scene keybinds --snap artifacts/keybinds.png
+```
+
+Scenes (`src/fixtures.rs`) fill each page with made-up data, so headless runs never read your
+config. In a normal run the app reads the system only after its window is up (`App::on_ready`),
+and every backend call runs on a worker thread.
+
+The colours come from `~/.config/hyprconfig/theme.css` (`--background`, `--foreground` and
+`--primary` for `:root` and `.dark`), which matugen can write; see the Appearance page. The light
+or dark choice is saved in `~/.config/hyprconfig/prefs.json`.
 
 ## Roadmap/Features
 

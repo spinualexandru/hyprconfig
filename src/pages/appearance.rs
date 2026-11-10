@@ -1,0 +1,521 @@
+use std::path::{Path, PathBuf};
+
+use rune::{Cx, El, FileDialogOptions, Image, SurfaceFit, Tx, col, el, icon, row, text};
+use rune_kit::{
+    Button, ButtonVariant, IconButton, IconButtonVariant, Kit, Select, SelectAppearance, Switch,
+};
+
+use crate::app::{self, State};
+use crate::backend::config::{self, MatugenPreferences};
+use crate::backend::hyprpaper::{self, HyprpaperConfig, Wallpaper};
+use crate::backend::os;
+use crate::icons;
+use crate::jobs::Remote;
+use crate::ui::{self, Card};
+
+pub const GENERATORS: &[(&str, &str)] = &[
+    ("scheme-content", "Scheme Content"),
+    ("scheme-expressive", "Scheme Expressive"),
+    ("scheme-fidelity", "Scheme Fidelity"),
+    ("scheme-fruit-salad", "Scheme Fruit Salad"),
+    ("scheme-monochrome", "Scheme Monochrome"),
+    ("scheme-neutral", "Scheme Neutral"),
+    ("scheme-rainbow", "Scheme Rainbow"),
+    ("scheme-tonal-spot", "Scheme Tonal Spot"),
+    ("scheme-vibrant", "Scheme Vibrant"),
+];
+
+const IMAGE_TYPES: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp"];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Preview {
+    #[default]
+    Pending,
+    Ready,
+    Failed,
+}
+
+#[derive(Default)]
+pub struct AppearanceState {
+    pub config: Remote<HyprpaperConfig>,
+    /// Whether `matugen` is installed; its settings show only then.
+    pub matugen: bool,
+    pub prefs: MatugenPreferences,
+    pub updating: bool,
+    pub generator_open: bool,
+    /// The current wallpaper's path and decoded image.
+    pub image: Option<(String, Image)>,
+    pub preview: Preview,
+}
+
+impl Default for MatugenPreferences {
+    fn default() -> Self {
+        MatugenPreferences {
+            enable: false,
+            light_mode: false,
+            generator_type: "scheme-tonal-spot".into(),
+        }
+    }
+}
+
+/// The wallpaper shown: the last one listed (the most recent).
+pub fn current(config: &HyprpaperConfig) -> Option<&Wallpaper> {
+    config.wallpapers.last()
+}
+
+pub fn load(s: &mut State) {
+    load_config(s);
+    s.jobs.run(
+        "matugen-exists",
+        || os::tool_exists("matugen".into()),
+        |s, exists, _| s.appearance.matugen = exists.unwrap_or(false),
+    );
+    s.jobs
+        .run("preferences", config::get_preferences, |s, r, _| {
+            if let Ok(p) = r {
+                s.appearance.prefs = p.matugen;
+            }
+        });
+}
+
+fn load_config(s: &mut State) {
+    let attempt = s.appearance.config.begin();
+    s.jobs.run(
+        "hyprpaper",
+        hyprpaper::get_hyprpaper_config,
+        move |s, r, _| {
+            if s.appearance.config.land(attempt, r) {
+                show_current(s);
+            }
+        },
+    );
+}
+
+/// Starts decoding the current wallpaper unless it already is.
+fn show_current(s: &mut State) {
+    let a = &mut s.appearance;
+    let path = a
+        .config
+        .data
+        .as_ref()
+        .and_then(current)
+        .map(|w| w.path.clone());
+    match (path, &s.images) {
+        (Some(p), _) if a.image.as_ref().is_some_and(|(q, _)| *q == p) => {}
+        (Some(p), Some(cache)) => {
+            // Raster formats decode at their own size; the size only applies to SVG.
+            let img = cache.file(&p, 1200.0, 2.0);
+            a.image = Some((p, img));
+            a.preview = Preview::Pending;
+        }
+        _ => {
+            a.image = None;
+            a.preview = Preview::Pending;
+        }
+    }
+}
+
+/// True when the preview finished decoding (or failed) since the last frame.
+pub fn watch_image(s: &mut State) -> bool {
+    let Some((_, img)) = &s.appearance.image else {
+        return false;
+    };
+    let now = if img.error().is_some() {
+        Preview::Failed
+    } else if img.size().is_some() {
+        Preview::Ready
+    } else {
+        Preview::Pending
+    };
+    let changed = now != s.appearance.preview;
+    s.appearance.preview = now;
+    changed
+}
+
+fn save_prefs(s: &mut State) {
+    let p = s.appearance.prefs.clone();
+    s.jobs.write(
+        "save-preferences",
+        move || config::update_matugen_preferences(p.enable, p.light_mode, p.generator_type),
+        |s, r, tx| {
+            if let Err(e) = r {
+                app::fail(s, tx, "Failed to save preference", e);
+            }
+        },
+    );
+}
+
+fn choose_wallpaper(s: &mut State, tx: &mut Tx) {
+    let directory = s
+        .appearance
+        .config
+        .data
+        .as_ref()
+        .and_then(current)
+        .and_then(|w| Path::new(&w.path).parent().map(Path::to_path_buf));
+    let options = FileDialogOptions {
+        title: "Choose a wallpaper".into(),
+        directory,
+        ..Default::default()
+    }
+    .filter("Images", IMAGE_TYPES);
+    tx.open_file(options, |s: &mut State, result, tx| match result {
+        Ok(Some(path)) => set_wallpaper(s, path),
+        Ok(None) => {}
+        Err(e) => app::fail(s, tx, "Couldn't open the file chooser", e.to_string()),
+    });
+}
+
+/// Which daemon didn't show a saved wallpaper (and why), and matugen's answer when it ran.
+type WallpaperSet = (Option<String>, Option<Result<(), String>>);
+
+/// Hyprpaper and/or Noctalia show `path` on every monitor; matugen recolours when enabled.
+pub fn set_wallpaper(s: &mut State, path: PathBuf) {
+    let path = path.to_string_lossy().into_owned();
+    let p = s.appearance.prefs.clone();
+    let matugen = (s.appearance.matugen && p.enable).then_some((p.light_mode, p.generator_type));
+    s.appearance.updating = true;
+    s.jobs.write(
+        "set-wallpaper",
+        move || -> Result<WallpaperSet, String> {
+            let not_shown = hyprpaper::replace_wallpaper(String::new(), path.clone(), None)?;
+            let synced = matugen.map(|(light, generator)| os::run_matugen(path, light, generator));
+            Ok((not_shown, synced))
+        },
+        |s, r, tx| {
+            s.appearance.updating = false;
+            match r {
+                Err(e) => app::fail(s, tx, "Failed to update wallpaper", e),
+                Ok((not_shown, synced)) => {
+                    if matches!(synced, Some(Ok(()))) {
+                        app::reload_theme(s);
+                    }
+                    let mut problems = Vec::new();
+                    if let Some(e) = not_shown {
+                        problems.push(e);
+                    }
+                    if let Some(Err(e)) = &synced {
+                        problems.push(format!("Matugen failed: {e}"));
+                    }
+                    if !problems.is_empty() {
+                        s.toasts
+                            .warning(tx, format!("Wallpaper saved, but {}", problems.join("; ")));
+                    } else if synced.is_some() {
+                        s.toasts.success(tx, "Wallpaper updated and Matugen synced");
+                    } else {
+                        s.toasts.success(tx, "Wallpaper updated successfully");
+                    }
+                }
+            }
+            load_config(s);
+        },
+    );
+}
+
+fn setup_template(s: &mut State) {
+    s.jobs.write(
+        "matugen-template",
+        config::ensure_matugen_template,
+        |s, r, tx| match r {
+            Ok(path) => s.toasts.success(tx, format!("Template created at {path}")),
+            Err(e) => app::fail(s, tx, "Failed to create template", e),
+        },
+    );
+}
+
+fn regenerate_theme(s: &mut State) {
+    let wallpaper = s
+        .appearance
+        .config
+        .data
+        .as_ref()
+        .and_then(current)
+        .map(|w| w.path.clone());
+    let p = s.appearance.prefs.clone();
+    s.jobs.write(
+        "regenerate-theme",
+        move || match wallpaper {
+            Some(path) => os::run_matugen(path, p.light_mode, p.generator_type),
+            None => Ok(()),
+        },
+        |s, r, tx| match r {
+            Ok(()) => {
+                app::reload_theme(s);
+                s.toasts.success(tx, "Theme regenerated and reloaded");
+            }
+            Err(e) => app::fail(s, tx, "Failed to reload theme", e),
+        },
+    );
+}
+
+fn preview(s: &State, k: &Kit) -> El {
+    let frame = el()
+        .key("preview")
+        .w_full()
+        .h(400.0)
+        .radius(10.0)
+        .fill(k.c.layer_02)
+        .label("Current wallpaper");
+    match (&s.appearance.image, s.appearance.preview) {
+        (Some(_), Preview::Failed) | (None, _) => frame.center().child(
+            col()
+                .items_center()
+                .gap(8.0)
+                .child(icon(&icons::IMAGE, 48.0).color(k.c.icon_muted))
+                .child(
+                    text("Failed to load image")
+                        .font(k.ty.body)
+                        .color(k.c.text_muted),
+                ),
+        ),
+        (Some((_, img)), _) => frame.pixels_fit(img.pixels(), SurfaceFit::Fill),
+    }
+}
+
+fn wallpaper_card(s: &State, k: &Kit) -> El {
+    let a = &s.appearance;
+    let refresh = IconButton::new(&icons::REFRESH_CW)
+        .variant(IconButtonVariant::Neutral)
+        .label("Reload wallpaper configuration")
+        .help("Refresh")
+        .disabled(a.config.loading)
+        .on_press(load_config)
+        .build(k)
+        .key("refresh");
+    let change = Button::new(if a.updating {
+        "Updating…"
+    } else {
+        "Change Wallpaper"
+    })
+    .icon(&icons::UPLOAD)
+    .variant(ButtonVariant::Contrast)
+    .disabled(a.updating || a.config.loading)
+    .on_press_tx(choose_wallpaper)
+    .build(k)
+    .key("change");
+    let mut card = Card::new()
+        .title("Wallpaper")
+        .description(match a.config.data.as_ref().and_then(|c| c.source) {
+            Some(daemon) => format!("Current wallpaper, shown by {}", daemon.name()),
+            None => "Current wallpaper from hyprpaper or Noctalia".to_owned(),
+        })
+        .action(refresh)
+        .action(change);
+    if let Some(e) = &a.config.error {
+        card = card.child(
+            text(format!("Failed to load wallpaper configuration: {e}"))
+                .key("error")
+                .font(k.ty.body)
+                .color(k.c.danger.icon)
+                .wrap()
+                .w_full(),
+        );
+    }
+    let body =
+        match a.config.data.as_ref().and_then(current) {
+            _ if a.config.first_load() => col()
+                .key("loading")
+                .w_full()
+                .gap(16.0)
+                .child(ui::skeleton(k, None, 400.0).w_full())
+                .child(ui::skeleton(k, Some(280.0), 16.0)),
+            Some(w) => col()
+                .key("current")
+                .w_full()
+                .gap(16.0)
+                .child(preview(s, k))
+                .child(ui::field(
+                    k,
+                    "path",
+                    "Path",
+                    text(w.path.clone())
+                        .key("value")
+                        .font(ui::mono(k))
+                        .color(k.c.text_muted)
+                        .wrap_anywhere()
+                        .w_full()
+                        .selectable(true),
+                ))
+                .child(ui::field(
+                    k,
+                    "monitor",
+                    "Monitor",
+                    ui::value_text(
+                        k,
+                        if w.monitor.is_empty() {
+                            "All monitors".to_owned()
+                        } else {
+                            w.monitor.clone()
+                        },
+                    ),
+                ))
+                .children((!w.fit_mode.is_empty()).then(|| {
+                    ui::field(k, "fit", "Fit Mode", ui::value_text(k, w.fit_mode.clone()))
+                })),
+            None => col()
+                .key("none")
+                .w_full()
+                .h(400.0)
+                .center()
+                .gap(8.0)
+                .child(icon(&icons::IMAGE, 56.0).color(k.c.icon_muted))
+                .child(
+                    text("No wallpaper configured")
+                        .font(ui::card_title_style())
+                        .color(k.c.text_strong),
+                )
+                .child(
+                    text("Click \"Change Wallpaper\" to set one")
+                        .font(k.ty.body)
+                        .color(k.c.text_muted),
+                ),
+        };
+    card.child(body).build(k).key("wallpaper")
+}
+
+fn setting(k: &Kit, key: &str, label: &str, description: &str, enabled: bool, control: El) -> El {
+    row()
+        .key(key)
+        .w(0.0)
+        .grow(1.0)
+        .gap(16.0)
+        .center_y()
+        .opacity(if enabled { 1.0 } else { 0.5 })
+        .child(
+            col()
+                .grow(1.0)
+                .shrink()
+                .min_w(0.0)
+                .gap(2.0)
+                .child(
+                    text(label.to_owned())
+                        .font(k.ty.body_medium)
+                        .color(k.c.text_strong),
+                )
+                .child(
+                    text(description.to_owned())
+                        .font(k.ty.body)
+                        .color(k.c.text_muted)
+                        .wrap()
+                        .w_full(),
+                ),
+        )
+        .child(control)
+}
+
+fn matugen_card(s: &State, k: &Kit, layers: &mut Vec<El>) -> El {
+    let p = &s.appearance.prefs;
+    let on = p.enable;
+    let enable = Switch::new(on)
+        .label("Enable Matugen")
+        .hide_label()
+        .on_toggle(|s: &mut State| {
+            s.appearance.prefs.enable = !s.appearance.prefs.enable;
+            save_prefs(s);
+        })
+        .build(k)
+        .key("switch");
+    let light = Switch::new(p.light_mode)
+        .label("Light Mode")
+        .hide_label()
+        .disabled(!on)
+        .on_toggle(|s: &mut State| {
+            s.appearance.prefs.light_mode = !s.appearance.prefs.light_mode;
+            save_prefs(s);
+        })
+        .build(k)
+        .key("switch");
+    let labels: Vec<&str> = GENERATORS.iter().map(|(_, l)| *l).collect();
+    let chosen = GENERATORS
+        .iter()
+        .find(|(id, _)| *id == p.generator_type)
+        .map(|(_, l)| *l);
+    let generator = Select::new("generator", &labels)
+        .label("Generator Type")
+        .placeholder("Select generator type")
+        .current(chosen)
+        .open(s.appearance.generator_open && on)
+        .disabled(!on)
+        .appearance(SelectAppearance::Field)
+        .width(280.0)
+        .on_toggle(|s: &mut State| s.appearance.generator_open = !s.appearance.generator_open)
+        .on_close(|s: &mut State| s.appearance.generator_open = false)
+        .on_choose(|s: &mut State, label: &str, _| {
+            s.appearance.generator_open = false;
+            if let Some((id, _)) = GENERATORS.iter().find(|(_, l)| *l == label) {
+                s.appearance.prefs.generator_type = (*id).to_owned();
+                save_prefs(s);
+            }
+        })
+        .build(k, layers);
+    let has_wallpaper = s
+        .appearance
+        .config
+        .data
+        .as_ref()
+        .and_then(current)
+        .is_some();
+    Card::new()
+        .title("General")
+        .description("Appearance settings and theme synchronization")
+        .gap(20.0)
+        .child(text("Matugen").key("matugen-title").role("heading").font(ui::card_title_style()).color(k.c.text_strong))
+        .child(
+            row()
+                .key("switches")
+                .w_full()
+                .gap(32.0)
+                .child(setting(k, "enable", "Enable", "Automatically generate color scheme from wallpaper", true, enable))
+                .child(setting(k, "light", "Light Mode", "Use light color scheme instead of dark", on, light)),
+        )
+        .child(
+            col()
+                .key("generator-field")
+                .gap(6.0)
+                .opacity(if on { 1.0 } else { 0.5 })
+                .child(text("Generator Type").font(k.ty.body_medium).color(k.c.text_strong))
+                .child(generator)
+                .child(text("Color scheme generation algorithm").font(k.ty.body).color(k.c.text_muted)),
+        )
+        .child(text("Theme").key("theme-title").role("heading").font(ui::card_title_style()).color(k.c.text_strong))
+        .child(
+            row()
+                .key("theme-buttons")
+                .gap(12.0)
+                .child(Button::new("Setup Template").icon(&icons::FILE_CODE).variant(ButtonVariant::Outline).on_press(setup_template).build(k).key("template"))
+                .child(
+                    Button::new("Reload Theme")
+                        .icon(&icons::PALETTE)
+                        .variant(ButtonVariant::Outline)
+                        .disabled(!has_wallpaper)
+                        .on_press(regenerate_theme)
+                        .build(k)
+                        .key("reload-theme"),
+                ),
+        )
+        .child(
+            text("Setup Template creates the matugen template at ~/.config/matugen/templates/hyprconfig.css. Reload Theme runs matugen on the current wallpaper and reloads the colors.")
+                .key("theme-help")
+                .font(k.ty.body)
+                .color(k.c.text_muted)
+                .wrap()
+                .w_full(),
+        )
+        .build(k)
+        .key("matugen")
+}
+
+pub fn view(s: &State, k: &Kit, _cx: &mut Cx<State>, layers: &mut Vec<El>) -> El {
+    let mut body = vec![wallpaper_card(s, k)];
+    if s.appearance.matugen {
+        body.push(matugen_card(s, k, layers));
+    }
+    ui::page(
+        k,
+        "appearance",
+        "Appearance",
+        "Customize your wallpaper and appearance settings",
+        Vec::new(),
+        body,
+    )
+}
