@@ -187,9 +187,9 @@ pub fn set_wallpaper(s: &mut State, path: PathBuf) {
             match r {
                 Err(e) => app::fail(s, tx, "Failed to update wallpaper", e),
                 Ok((not_shown, synced)) => {
-                    if matches!(synced, Some(Ok(()))) {
-                        app::reload_theme(s);
-                    }
+                    // The generators work from the wallpaper, and matugen may have rewritten
+                    // theme.css: recolour either way.
+                    app::reload_theme(s);
                     let mut problems = Vec::new();
                     if let Some(e) = not_shown {
                         problems.push(e);
@@ -373,36 +373,6 @@ fn wallpaper_card(s: &State, k: &Kit) -> El {
     card.child(body).build(k).key("wallpaper")
 }
 
-fn setting(k: &Kit, key: &str, label: &str, description: &str, enabled: bool, control: El) -> El {
-    row()
-        .key(key)
-        .w(0.0)
-        .grow(1.0)
-        .gap(16.0)
-        .center_y()
-        .opacity(if enabled { 1.0 } else { 0.5 })
-        .child(
-            col()
-                .grow(1.0)
-                .shrink()
-                .min_w(0.0)
-                .gap(2.0)
-                .child(
-                    text(label.to_owned())
-                        .font(k.ty.body_medium)
-                        .color(k.c.text_strong),
-                )
-                .child(
-                    text(description.to_owned())
-                        .font(k.ty.body)
-                        .color(k.c.text_muted)
-                        .wrap()
-                        .w_full(),
-                ),
-        )
-        .child(control)
-}
-
 fn matugen_card(s: &State, k: &Kit, layers: &mut Vec<El>) -> El {
     let p = &s.appearance.prefs;
     let on = p.enable;
@@ -465,8 +435,8 @@ fn matugen_card(s: &State, k: &Kit, layers: &mut Vec<El>) -> El {
                 .key("switches")
                 .w_full()
                 .gap(32.0)
-                .child(setting(k, "enable", "Enable", "Automatically generate color scheme from wallpaper", true, enable))
-                .child(setting(k, "light", "Light Mode", "Use light color scheme instead of dark", on, light)),
+                .child(ui::setting(k, "enable", "Enable", "Automatically generate color scheme from wallpaper", true, enable))
+                .child(ui::setting(k, "light", "Light Mode", "Use light color scheme instead of dark", on, light)),
         )
         .child(
             col()

@@ -114,7 +114,7 @@ pub fn enter(s: &mut State, page: Page) {
 
 pub fn view(s: &State, k: &Kit, cx: &mut Cx<State>, layers: &mut Vec<El>) -> El {
     match s.page {
-        Page::General => general::view(k),
+        Page::General => general::view(s, k),
         Page::Appearance => appearance::view(s, k, cx, layers),
         Page::Network => network::view(s, k),
         Page::Audio => audio::view(s, k),

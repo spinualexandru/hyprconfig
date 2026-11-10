@@ -17,6 +17,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use rune::{Tx, Waker};
 
@@ -119,6 +120,66 @@ impl Jobs {
         }
     }
 
+    /// A source that keeps producing (a socket, a watcher) on a thread of its own: `source`
+    /// gets an `emit` that lands each value through `land` on the UI thread, and answers false
+    /// once the app is gone, when the source should return.
+    pub fn stream<T: Send + 'static>(
+        &mut self,
+        name: &'static str,
+        source: impl FnOnce(&mut dyn FnMut(T) -> bool) + Send + 'static,
+        land: impl Fn(&mut State, T, &mut Tx) + Send + Clone + 'static,
+    ) {
+        if !self.live {
+            self.skipped.push(name);
+            return;
+        }
+        let send = self.send.clone();
+        let waker = self.waker.clone();
+        let spawned = std::thread::Builder::new()
+            .name(format!("stream-{name}"))
+            .spawn(move || {
+                let mut emit = |value: T| {
+                    let land = land.clone();
+                    let landing: Landing =
+                        Box::new(move |s: &mut State, tx: &mut Tx| land(s, value, tx));
+                    let delivered = send.send(landing).is_ok();
+                    if delivered && let Some(w) = &waker {
+                        w();
+                    }
+                    delivered
+                };
+                source(&mut emit);
+            });
+        if let Err(e) = spawned {
+            eprintln!("hyprconfig: couldn't start {name}: {e}");
+        }
+    }
+
+    /// Watches something cheap to check (file times, say): `probe` runs every `every`, and
+    /// once its answer has changed and then held for one more check, `land` runs on the UI
+    /// thread. The thread ends when the app does.
+    pub fn watch<F: PartialEq + Send + 'static>(
+        &mut self,
+        name: &'static str,
+        every: Duration,
+        mut probe: impl FnMut() -> F + Send + 'static,
+        land: impl Fn(&mut State, &mut Tx) + Send + Clone + 'static,
+    ) {
+        self.stream(
+            name,
+            move |emit| {
+                let mut settle = Settle::new(probe());
+                loop {
+                    std::thread::sleep(every);
+                    if settle.check(probe()) && !emit(()) {
+                        return;
+                    }
+                }
+            },
+            move |s, (), tx| land(s, tx),
+        );
+    }
+
     fn writer(&mut self) -> std::io::Result<&Sender<Task>> {
         if self.writer.is_none() {
             let (send, queue) = channel::<Task>();
@@ -165,6 +226,33 @@ impl Jobs {
             landed = true;
         }
         landed
+    }
+}
+
+/// Debounces a watched value: a change counts once it has held for one more check, so a
+/// burst of writes (a file replaced in steps, several files saved together) fires once.
+pub struct Settle<F> {
+    seen: F,
+    pending: bool,
+}
+
+impl<F: PartialEq> Settle<F> {
+    pub fn new(seen: F) -> Settle<F> {
+        Settle {
+            seen,
+            pending: false,
+        }
+    }
+
+    /// True when the value changed and has now held still.
+    pub fn check(&mut self, now: F) -> bool {
+        if now != self.seen {
+            self.seen = now;
+            self.pending = true;
+            false
+        } else {
+            std::mem::take(&mut self.pending)
+        }
     }
 }
 
@@ -293,7 +381,17 @@ impl<T> Remote<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Remote, guarded};
+    use super::{Remote, Settle, guarded};
+
+    #[test]
+    fn a_watched_change_fires_once_it_settles() {
+        let mut w = Settle::new(1);
+        assert!(!w.check(1), "nothing changed");
+        assert!(!w.check(2), "changed, not settled yet");
+        assert!(!w.check(3), "still changing");
+        assert!(w.check(3), "held for a check");
+        assert!(!w.check(3), "fires once");
+    }
 
     #[test]
     fn a_superseded_answer_is_dropped() {

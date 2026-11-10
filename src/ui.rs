@@ -700,3 +700,42 @@ impl Toasts {
         Some(region.build(k))
     }
 }
+
+/// A labelled control: name and description on the left, the control on the right. Dimmed
+/// while `enabled` is false.
+pub fn setting(
+    k: &Kit,
+    key: &str,
+    label: &str,
+    description: &str,
+    enabled: bool,
+    control: El,
+) -> El {
+    row()
+        .key(key)
+        .w(0.0)
+        .grow(1.0)
+        .gap(16.0)
+        .center_y()
+        .opacity(if enabled { 1.0 } else { 0.5 })
+        .child(
+            col()
+                .grow(1.0)
+                .shrink()
+                .min_w(0.0)
+                .gap(2.0)
+                .child(
+                    text(label.to_owned())
+                        .font(k.ty.body_medium)
+                        .color(k.c.text_strong),
+                )
+                .child(
+                    text(description.to_owned())
+                        .font(k.ty.body)
+                        .color(k.c.text_muted)
+                        .wrap()
+                        .w_full(),
+                ),
+        )
+        .child(control)
+}

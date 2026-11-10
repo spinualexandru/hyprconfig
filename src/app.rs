@@ -1,11 +1,15 @@
 //! The app's state, its shell (sidebar and page) and its lifecycle hooks.
 
+use std::sync::atomic::Ordering;
+
 use rune::prefs::Prefs;
 use rune::{AppSpec, Cx, El, ImageCache, KeyEvent, Tx, Waker, col, row, text};
 use rune_kit::Kit;
 use rune_kit::shell::{self, PaneState, Sidebar, SidebarRow, SplitView};
 
 use crate::backend::hyprland::{self as hypr, ConfigInfo};
+use crate::backend::palette;
+use crate::ipc;
 use crate::jobs::{Jobs, Remote};
 use crate::pages::{self, Page};
 use crate::theme::Palettes;
@@ -19,6 +23,8 @@ pub struct State {
     pub sidebar: PaneState,
     /// The appearance the user chose; `None` follows the desktop.
     pub dark: Option<bool>,
+    /// Noctalia's light or dark mode while it runs; it stands in for the desktop's.
+    pub noctalia_dark: Option<bool>,
     pub palettes: Palettes,
     pub prefs: Option<Prefs>,
     pub jobs: Jobs,
@@ -26,6 +32,7 @@ pub struct State {
     pub images: Option<ImageCache>,
     /// Whether the user's config is `hyprland.lua` or `hyprland.conf`.
     pub config_info: Remote<ConfigInfo>,
+    pub general: pages::general::GeneralState,
     pub about: pages::about::AboutState,
     pub appearance: pages::appearance::AppearanceState,
     pub network: pages::network::NetworkState,
@@ -45,12 +52,14 @@ impl State {
             page: Page::General,
             sidebar: PaneState::new(232.0).range(180.0, 360.0),
             dark: None,
+            noctalia_dark: None,
             palettes: Palettes::default(),
             prefs: None,
             jobs: Jobs::new(),
             toasts: Toasts::default(),
             images: None,
             config_info: Remote::default(),
+            general: Default::default(),
             about: Default::default(),
             appearance: Default::default(),
             network: Default::default(),
@@ -64,14 +73,19 @@ impl State {
         }
     }
 
-    /// The state the app starts with: the saved appearance and the theme file's colours. Both
-    /// are small local reads, done before the first frame so it draws in the right colours.
+    /// The state the app starts with: the saved appearance, the preferred colour generator and
+    /// the colours it made last time (or the theme file's). All are small local reads, done
+    /// before the first frame so it draws in the right colours; the generator reruns once the
+    /// window is up.
     pub fn launch() -> State {
         let mut s = State::new();
         let prefs = Prefs::open(APP_ID);
         s.dark = prefs.get::<bool>("dark");
+        s.general.generator = prefs
+            .get(pages::general::GENERATOR_PREF)
+            .unwrap_or_default();
         s.prefs = Some(prefs);
-        if let Ok(css) = backend::config::get_theme_css() {
+        if let Some(css) = palette::cached_css().or_else(|| backend::config::get_theme_css().ok()) {
             s.palettes = Palettes::parse(&css);
         }
         s
@@ -95,6 +109,11 @@ impl Default for State {
 pub fn ready(s: &mut State, _tx: &mut Tx) {
     s.jobs.go_live();
     load_config_info(s);
+    reload_theme(s);
+    load_noctalia_mode(s);
+    pages::general::load_integration(s);
+    listen(s);
+    watch_theme(s);
     pages::enter(s, s.page);
 }
 
@@ -114,13 +133,70 @@ pub fn navigate(s: &mut State, page: Page, tx: &mut Tx) {
     }
 }
 
-/// Re-reads `theme.css` (after matugen writes it) on a worker.
+/// Recolours the app on a worker: the preferred generator, the other one, or `theme.css`
+/// (after matugen writes it). Run when the wallpaper or the preference changes.
 pub fn reload_theme(s: &mut State) {
-    s.jobs
-        .run("theme", backend::config::get_theme_css, |s, r, _| {
-            if let Ok(css) = r {
-                s.palettes = Palettes::parse(&css);
+    pages::general::refresh_colors(s);
+}
+
+/// Recolours the app when its inputs change on disk: chromasync's config, hyprpaper's
+/// wallpaper, `theme.css` and Noctalia's settings, or with the Noctalia integration on, the
+/// palette Noctalia renders (its post hook usually reports that first).
+fn watch_theme(s: &mut State) {
+    let hooked = s.general.hooked.clone();
+    s.jobs.watch(
+        "theme-files",
+        std::time::Duration::from_millis(750),
+        move || palette::stamps(&palette::watched_paths(hooked.load(Ordering::Relaxed))),
+        |s, _| reload_theme(s),
+    );
+}
+
+/// Listens for `hyprconfig notify` (Noctalia's template and hooks) and acts on what changed.
+fn listen(s: &mut State) {
+    s.jobs.stream(
+        "ipc",
+        |emit| match ipc::bind() {
+            Ok(listener) => {
+                ipc::serve_batched(listener, std::time::Duration::from_millis(300), |batch| {
+                    emit(batch)
+                })
             }
+            Err(e) => eprintln!("hyprconfig: not listening for changes: {e}"),
+        },
+        |s, batch: Vec<ipc::Event>, _| {
+            if batch.contains(&ipc::Event::Mode) {
+                // Switching mode in Noctalia is newer than a choice made in the sidebar.
+                unpin_dark(s);
+                load_noctalia_mode(s);
+            }
+            if batch
+                .iter()
+                .any(|e| matches!(e, ipc::Event::Colors | ipc::Event::Wallpaper))
+            {
+                reload_theme(s);
+            }
+        },
+    );
+}
+
+/// Forgets the sidebar's light or dark choice, so the desktop's (or Noctalia's) shows.
+pub fn unpin_dark(s: &mut State) {
+    s.dark = None;
+    if let Some(p) = s.prefs.as_mut()
+        && let Err(e) = p.remove("dark")
+    {
+        eprintln!("hyprconfig: couldn't save the appearance: {e}");
+    }
+}
+
+/// Follows Noctalia's light or dark mode, unless the user picked one in the sidebar since
+/// Noctalia's last change.
+pub fn load_noctalia_mode(s: &mut State) {
+    s.jobs
+        .run("noctalia-mode", palette::noctalia_dark, |s, r, _| match r {
+            Ok(dark) => s.noctalia_dark = dark,
+            Err(e) => eprintln!("hyprconfig: couldn't read Noctalia's mode: {e}"),
         });
 }
 
@@ -135,7 +211,10 @@ fn toggle_dark(s: &mut State, dark_now: bool) {
 }
 
 pub fn kit(s: &State, cx: &Cx<State>) -> (Kit, bool) {
-    let dark = s.dark.unwrap_or_else(|| cx.system_dark());
+    let dark = s
+        .dark
+        .or(s.noctalia_dark)
+        .unwrap_or_else(|| cx.system_dark());
     (s.palettes.kit(dark), dark)
 }
 

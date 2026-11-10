@@ -55,9 +55,39 @@ Scenes (`src/fixtures.rs`) fill each page with made-up data, so headless runs ne
 config. In a normal run the app reads the system only after its window is up (`App::on_ready`),
 and every backend call runs on a worker thread.
 
-The colours come from `~/.config/hyprconfig/theme.css` (`--background`, `--foreground` and
-`--primary` for `:root` and `.dark`), which matugen can write; see the Appearance page. The light
-or dark choice is saved in `~/.config/hyprconfig/prefs.json`.
+The colours come from a colour scheme generator, chosen on the General page:
+
+- [chromasync](https://github.com/spinualexandru/chromasync) (the default) renders the current
+  wallpaper with the template, chroma and contrast of your `default` sync profile in
+  `~/.config/chromasync/config.toml` (`materialish` when there is none).
+- Noctalia 5 uses its current colour scheme. Wallpaper schemes (`m3-tonal-spot` and so on) and
+  downloaded community palettes work as they are. Builtin and custom schemes need the Noctalia
+  integration below, which has Noctalia render whichever palette it shows.
+
+When the preferred generator isn't installed or can't answer, the other one is tried, then
+`~/.config/hyprconfig/theme.css` (`--background`, `--foreground` and `--primary` for `:root` and
+`.dark`), which matugen can write; see the Appearance page. The colours regenerate at start-up and
+whenever their inputs change:
+
+- With Noctalia running, the General page's Noctalia integration switch writes
+  `~/.config/noctalia/hyprconfig.toml`, which registers a user template
+  (`~/.config/hyprconfig/noctalia-template.css`). Noctalia renders it to
+  `~/.cache/hyprconfig/noctalia.css` on every palette change, whatever the scheme, then runs its
+  post hook. The switch also adds Hyprconfig to the On Theme Mode Changed and On Wallpaper
+  Changed hooks, and leaves your other hook commands alone. The post hook and the hooks run
+  `hyprconfig notify <event>` (`colors`, `mode` or `wallpaper`), which tells the running app
+  through `$XDG_RUNTIME_DIR/hyprconfig.sock` and exits quietly when it isn't running. They use the
+  full path of the Hyprconfig that set them up, so turn the switch on from the installed copy.
+  Noctalia's mode also becomes the app's light or dark mode. A choice made in the sidebar
+  overrides it until Noctalia's mode next changes. Turning the switch off removes all of it.
+- Files are checked every 0.75 s: chromasync's `config.toml`, `hyprpaper.conf`, `theme.css` and
+  Noctalia's `settings.toml` and `~/.config/noctalia/`, or with the integration on, the palette
+  Noctalia renders. A wallpaper set only through hyprpaper's IPC, with no file written, isn't
+  noticed; press the refresh button on the General page then.
+
+The last generated set is cached in
+`~/.cache/hyprconfig/colors.css` so the window opens in them. The generator and the light or dark
+choice are saved in `~/.config/hyprconfig/prefs.json`.
 
 ## Roadmap/Features
 
@@ -71,6 +101,7 @@ or dark choice is saved in `~/.config/hyprconfig/prefs.json`.
 - [x] Sync with hyprpaper
 - [x] Sync with matugen
 - [x] Matugen sync type
+- [x] App colours from chromasync or Noctalia 5
 - [ ] Add undo
 
 ### System

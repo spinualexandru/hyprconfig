@@ -28,7 +28,7 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-fn hyprpaper_config_path() -> Result<PathBuf, String> {
+pub(crate) fn hyprpaper_config_path() -> Result<PathBuf, String> {
     let home_dir =
         std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
 
@@ -111,7 +111,7 @@ fn read_hyprpaper_wallpapers() -> Result<Vec<Wallpaper>, String> {
     Ok(wallpapers)
 }
 
-fn parse_noctalia_wallpaper_output(output: &str) -> Option<String> {
+pub(crate) fn parse_noctalia_wallpaper_output(output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty()
         || trimmed.eq_ignore_ascii_case("null")
@@ -244,7 +244,7 @@ fn process_running(name: &str) -> bool {
 }
 
 /// `noctalia msg <args>`: its output, or why it failed.
-fn noctalia_msg(args: &[&str]) -> Result<String, String> {
+pub(crate) fn noctalia_msg(args: &[&str]) -> Result<String, String> {
     let output = Command::new("noctalia")
         .arg("msg")
         .args(args)
@@ -268,7 +268,7 @@ fn noctalia_reply(success: bool, stdout: String, stderr: &str) -> Result<String,
 }
 
 /// `config-get` prints TOML values: `true`, `'crop'`.
-fn toml_scalar(value: &str) -> String {
+pub(crate) fn toml_scalar(value: &str) -> String {
     value.trim().trim_matches(['\'', '"']).to_string()
 }
 

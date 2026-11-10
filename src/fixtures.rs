@@ -10,6 +10,7 @@ use crate::backend::hyprland::{
     WifiNetwork,
 };
 use crate::backend::hyprpaper::{Daemon, HyprpaperConfig, Wallpaper};
+use crate::backend::palette::{Colors, Generator};
 use crate::jobs::Remote;
 use crate::pages::Page;
 use crate::pages::displays::{self, Phase};
@@ -21,7 +22,28 @@ use crate::ui::{ToastItem, ToastKind};
 pub type Scene = (&'static str, fn(&mut State));
 
 pub const SCENES: &[Scene] = &[
-    ("general", |_| {}),
+    ("general", |s| {
+        s.general.colors = Remote::ready(Colors {
+            used: Some(Generator::Chromasync),
+            css: String::new(),
+            skipped: Vec::new(),
+        });
+        s.general.integration = Remote::ready(Some(false));
+    }),
+    ("general-fallback", |s| {
+        s.general.generator = Generator::Noctalia;
+        s.general.colors = Remote::ready(Colors {
+            used: None,
+            css: String::new(),
+            skipped: vec![
+                (
+                    Generator::Noctalia,
+                    "its builtin scheme \"Noctalia\" can't be read; choose a wallpaper or community scheme in Noctalia".into(),
+                ),
+                (Generator::Chromasync, "not installed".into()),
+            ],
+        });
+    }),
     ("dark", |s| s.dark = Some(true)),
     ("light", |s| s.dark = Some(false)),
     ("about", |s| {
