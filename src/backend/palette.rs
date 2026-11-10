@@ -693,6 +693,23 @@ pub fn set_noctalia_integration(on: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// `hyprconfig noctalia off`, which `just uninstall` runs while the binary the hooks name is
+/// still there: the integration comes out, the user's own hooks stay. Without Noctalia
+/// running its hooks can't be changed, which matters only if the integration is on.
+pub fn remove_noctalia_integration() -> Result<(), String> {
+    if noctalia_running().is_ok() {
+        return set_noctalia_integration(false);
+    }
+    if integration_paths()?.config.exists() {
+        return Err(
+            "Noctalia isn't running, so Hyprconfig's hooks can't be taken out of it; \
+                    start Noctalia and run `hyprconfig noctalia off` again"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 /// The palette Noctalia last rendered from the template, when the integration is on.
 fn noctalia_rendered() -> Option<String> {
     let paths = integration_paths().ok()?;

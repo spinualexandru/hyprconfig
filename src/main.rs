@@ -15,11 +15,18 @@ mod ui;
 mod tests;
 
 fn main() {
-    // `hyprconfig notify <event>`: tell the running app something changed (Noctalia's hooks).
+    // Commands that run and exit before any window:
+    // `hyprconfig notify <event>` tells the running app something changed (Noctalia's hooks);
+    // `hyprconfig noctalia off` takes the Noctalia integration out (`just uninstall`).
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) == Some("notify") {
-        let event = args.get(1).map(String::as_str).unwrap_or_default();
-        if let Err(e) = ipc::notify(event) {
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let command = match args.as_slice() {
+        ["notify", rest @ ..] => Some(ipc::notify(rest.first().copied().unwrap_or_default())),
+        ["noctalia", "off"] => Some(backend::palette::remove_noctalia_integration()),
+        _ => None,
+    };
+    if let Some(result) = command {
+        if let Err(e) = result {
             eprintln!("hyprconfig: {e}");
             std::process::exit(1);
         }
@@ -28,7 +35,13 @@ fn main() {
     rune::prewarm_gpu();
     // Wayland app_id / X11 WM_CLASS, matching hyprconfig.desktop and users' window rules.
     rune::tooling::set_app_id(app::APP_ID);
-    let app = rune::App::new(app::spec()).init(app::State::launch);
+    // A headless run (`--scene`, `--snap`) draws made-up data, not the user's prefs and colours.
+    let init = if rune::is_headless() {
+        app::State::new
+    } else {
+        app::State::launch
+    };
+    let app = rune::App::new(app::spec()).init(init);
     let handle = app.handle();
     // `on_ready` runs again if the window is recreated; the system is only wired up once.
     let mut started = false;

@@ -35,7 +35,7 @@ Changing the wallpaper opens the desktop's file chooser through the XDG desktop 
 
 ```
 just install     # ~/.local/bin/hyprconfig, its icon and a .desktop entry
-just uninstall
+just uninstall   # also takes the Noctalia integration out (`hyprconfig noctalia off`)
 ```
 
 The window's app id is `hyprconfig`, for window rules such as
@@ -79,7 +79,8 @@ whenever their inputs change:
   through `$XDG_RUNTIME_DIR/hyprconfig.sock` and exits quietly when it isn't running. They use the
   full path of the Hyprconfig that set them up, so turn the switch on from the installed copy.
   Noctalia's mode also becomes the app's light or dark mode. A choice made in the sidebar
-  overrides it until Noctalia's mode next changes. Turning the switch off removes all of it.
+  overrides it until Noctalia's mode next changes. Turning the switch off, or running
+  `hyprconfig noctalia off` (which `just uninstall` does), removes all of it.
 - Files are checked every 0.75 s: chromasync's `config.toml`, `hyprpaper.conf`, `theme.css` and
   Noctalia's `settings.toml` and `~/.config/noctalia/`, or with the integration on, the palette
   Noctalia renders. A wallpaper set only through hyprpaper's IPC, with no file written, isn't

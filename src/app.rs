@@ -148,7 +148,11 @@ fn watch_theme(s: &mut State) {
         "theme-files",
         std::time::Duration::from_millis(750),
         move || palette::stamps(&palette::watched_paths(hooked.load(Ordering::Relaxed))),
-        |s, _| reload_theme(s),
+        |s, _| {
+            // Noctalia's settings hold its light or dark mode as well as its scheme.
+            load_noctalia_mode(s);
+            reload_theme(s);
+        },
     );
 }
 

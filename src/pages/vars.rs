@@ -38,6 +38,9 @@ pub struct VarsState {
     pub list: Remote<Vec<Entry>>,
     /// The row being edited in place, by id.
     pub editing: Option<String>,
+    /// That row as it was when the edit began. An env var's id is its position, which a delete
+    /// elsewhere shifts onto another entry, so the edit follows the entry rather than the id.
+    pub editing_entry: Option<Entry>,
     pub edit_value: TextEdit,
     pub edit_busy: bool,
     pub add_open: bool,
@@ -214,17 +217,29 @@ pub fn load(s: &mut State, kind: Kind) {
         move |s, r, _| {
             let v = of(s, kind);
             if v.list.land(attempt, r) {
-                // An edit whose row went away ends.
-                let gone = v
-                    .editing
-                    .as_ref()
-                    .is_some_and(|id| !v.list.data.iter().flatten().any(|e| &e.id(kind) == id));
-                if gone {
-                    v.editing = None;
-                }
+                end_stale_edit(v, kind);
             }
         },
     );
+}
+
+/// After a reload: an edit whose row went away ends, and for an env var, so does one whose
+/// position now holds another entry.
+pub fn end_stale_edit(v: &mut VarsState, kind: Kind) {
+    let rows = || v.list.data.iter().flatten();
+    let gone = match kind {
+        Kind::Variables => v
+            .editing
+            .as_ref()
+            .is_some_and(|id| !rows().any(|e| &e.id(kind) == id)),
+        Kind::Env => v
+            .editing_entry
+            .as_ref()
+            .is_some_and(|orig| !rows().any(|e| e == orig)),
+    };
+    if gone {
+        end_edit(v);
+    }
 }
 
 pub fn start_edit(s: &mut State, kind: Kind, id: String, value: &str) {
@@ -232,6 +247,13 @@ pub fn start_edit(s: &mut State, kind: Kind, id: String, value: &str) {
     if v.list.settling() {
         return;
     }
+    v.editing_entry = v
+        .list
+        .data
+        .iter()
+        .flatten()
+        .find(|e| e.id(kind) == id)
+        .cloned();
     v.editing = Some(id);
     v.edit_value = TextEdit::new(value);
     v.edit_value.focused = true;
@@ -240,24 +262,22 @@ pub fn start_edit(s: &mut State, kind: Kind, id: String, value: &str) {
 
 pub fn cancel_edit(s: &mut State, kind: Kind) {
     let v = of(s, kind);
-    v.editing = None;
+    end_edit(v);
     v.edit_busy = false;
+}
+
+fn end_edit(v: &mut VarsState) {
+    v.editing = None;
+    v.editing_entry = None;
 }
 
 pub fn save_edit(s: &mut State, kind: Kind) {
     let v = of(s, kind);
-    let Some(id) = v.editing.clone() else { return };
     if v.edit_busy {
         return;
     }
-    let Some(entry) = v
-        .list
-        .data
-        .iter()
-        .flatten()
-        .find(|e| e.id(kind) == id)
-        .cloned()
-    else {
+    // The entry the edit began on: an env var's write checks the file still has it there.
+    let Some(entry) = v.editing_entry.clone() else {
         return;
     };
     let value = v.edit_value.text.clone();
@@ -274,7 +294,7 @@ pub fn save_edit(s: &mut State, kind: Kind) {
         move |s, r, tx| {
             of(s, kind).edit_busy = false;
             if r.is_ok() {
-                of(s, kind).editing = None;
+                end_edit(of(s, kind));
             }
             written(s, kind, &r);
             if let Err(e) = r {

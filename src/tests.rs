@@ -10,6 +10,7 @@ use crate::jobs::Remote;
 use crate::pages::Page;
 use crate::pages::displays::{self, Phase};
 use crate::pages::keybinds::{FormMode, Tab};
+use crate::pages::vars::{self, Kind};
 use crate::{dispatchers, fixtures};
 
 const FRAME: f64 = 1.0 / 60.0;
@@ -538,6 +539,35 @@ fn an_env_var_delete_waits_for_the_reload_before_the_next() {
     // The edit of a row's value waits too.
     tap(&mut rt, "row-2/value");
     assert_eq!(rt.state.envvars.editing, None);
+}
+
+#[test]
+fn an_env_var_edit_ends_when_another_entry_takes_its_place() {
+    let mut rt = on(Page::EnvVars, |s| {
+        s.envvars.list = Remote::ready(fixtures::env_entries())
+    });
+    tap(&mut rt, "row-1/value");
+    assert_eq!(rt.state.envvars.editing.as_deref(), Some("1"));
+    // A reload that leaves the edited entry where it was keeps the edit.
+    rt.update(|s, _| {
+        land(&mut s.envvars.list, Ok(fixtures::env_entries()));
+        vars::end_stale_edit(&mut s.envvars, Kind::Env);
+    });
+    run(&mut rt, 0.2);
+    assert_eq!(rt.state.envvars.editing.as_deref(), Some("1"));
+    // Entry 0 was deleted elsewhere, so entry 2 now sits at position 1.
+    rt.update(|s, _| {
+        let mut rows = fixtures::env_entries();
+        rows.remove(0);
+        for (i, e) in rows.iter_mut().enumerate() {
+            e.index = i;
+        }
+        land(&mut s.envvars.list, Ok(rows));
+        vars::end_stale_edit(&mut s.envvars, Kind::Env);
+    });
+    run(&mut rt, 0.2);
+    assert_eq!(rt.state.envvars.editing, None);
+    assert_eq!(rt.state.envvars.editing_entry, None);
 }
 
 #[test]

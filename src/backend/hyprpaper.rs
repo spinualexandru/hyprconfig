@@ -370,18 +370,14 @@ pub fn replace_wallpaper(
     let mut problems = Vec::new();
     for daemon in Running::detect().targets() {
         let result = match daemon {
-            Daemon::Hyprpaper => {
-                let content = format!(
-                    "wallpaper {{\n    monitor = {}\n    path = {}\n    fit_mode = {}\n}}\n",
-                    monitor, path, fit
-                );
-                hyprpaper_config_path()
-                    .and_then(|config| write_hyprpaper_config(&config, content))
-                    .and_then(|()| {
-                        saved = true;
-                        show_in_hyprpaper(monitor, path, &fit)
-                    })
-            }
+            Daemon::Hyprpaper => hyprpaper_config_path()
+                .and_then(|config| {
+                    write_hyprpaper_config(&config, wallpaper_block(monitor, path, &fit))
+                })
+                .and_then(|()| {
+                    saved = true;
+                    show_in_hyprpaper(monitor, path, &fit)
+                }),
             Daemon::Noctalia => set_noctalia_wallpaper(path).map(|()| saved = true),
             Daemon::NoctaliaLegacy => set_legacy_noctalia_wallpaper(path).map(|()| saved = true),
         };
@@ -394,6 +390,18 @@ pub fn replace_wallpaper(
         (true, false) => Ok(Some(problems.join("; "))),
         (false, false) => Err(problems.join("; ")),
     }
+}
+
+/// hyprpaper's config for one wallpaper. A `#` starts a comment in hyprlang, so a literal one
+/// is written `##`.
+fn wallpaper_block(monitor: &str, path: &str, fit: &str) -> String {
+    let esc = |s: &str| s.replace('#', "##");
+    format!(
+        "wallpaper {{\n    monitor = {}\n    path = {}\n    fit_mode = {}\n}}\n",
+        esc(monitor),
+        esc(path),
+        esc(fit)
+    )
 }
 
 /// `hyprctl hyprpaper wallpaper '[mon], [path], [fit_mode]'` (hyprpaper's IPC format).
@@ -429,6 +437,19 @@ fn hyprpaper_reply(success: bool, stdout: &str, stderr: &str) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wallpaper_path_keeps_its_hash() {
+        let mut config = Config::new();
+        register_hyprpaper_config(&mut config);
+        config
+            .parse(&wallpaper_block("", "/home/u/walls/#1 sunset.png", "cover"))
+            .unwrap();
+        let key = config.list_special_category_keys("wallpaper").remove(0);
+        let wallpaper = config.get_special_category("wallpaper", &key).unwrap();
+        let path = wallpaper.get("path").and_then(|v| v.as_string().ok());
+        assert_eq!(path, Some("/home/u/walls/#1 sunset.png"));
+    }
 
     #[test]
     fn reads_hyprpaper_replies() {

@@ -228,8 +228,9 @@ pub fn apply(s: &mut State) {
         |s, r, tx| match r {
             Ok(()) => start_countdown(s, tx),
             Err(e) => {
-                s.displays.phase = Phase::Editing;
                 app::fail(s, tx, "Failed to apply settings", e);
+                // The monitors applied before the failing one run their new modes.
+                begin_revert(s);
             }
         },
     );
@@ -270,9 +271,13 @@ pub fn tick(s: &mut State, now: f64, tx: &mut Tx) -> bool {
 }
 
 pub fn revert(s: &mut State) {
-    if !matches!(s.displays.phase, Phase::Confirming { .. }) {
-        return;
+    if matches!(s.displays.phase, Phase::Confirming { .. }) {
+        begin_revert(s);
     }
+}
+
+/// Puts every monitor back on its original mode.
+fn begin_revert(s: &mut State) {
     s.displays.phase = Phase::Reverting;
     let modes = modes(&s.displays, true);
     s.jobs.write(

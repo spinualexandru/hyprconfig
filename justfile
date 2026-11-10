@@ -24,7 +24,7 @@ check:
 snapshots theme="dark":
     cargo build
     mkdir -p artifacts
-    for s in $(target/debug/hyprconfig --list-scenes); do \
+    set -e; for s in $(target/debug/hyprconfig --list-scenes); do \
         target/debug/hyprconfig --scene "$s" --theme {{theme}} --size 1100x760 --at 1 \
             --snap "artifacts/$s-{{theme}}.png" --tree "artifacts/$s-{{theme}}.json" > /dev/null; \
     done
@@ -39,6 +39,10 @@ install:
     -update-desktop-database "$(dirname {{desktop}})" 2>/dev/null
     @echo "Installed {{bin}}. Make sure ~/.local/bin is in your PATH."
 
+# Remove what install put in ~/.local, and first Hyprconfig's template and hooks from Noctalia,
+# which run the installed binary
 uninstall:
+    f="${NOCTALIA_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/noctalia}/hyprconfig.toml"; \
+        if [ -x {{bin}} ] && [ -e "$f" ]; then {{bin}} noctalia off; fi
     rm -f {{bin}} {{icon}} {{desktop}}
     -update-desktop-database "$(dirname {{desktop}})" 2>/dev/null
