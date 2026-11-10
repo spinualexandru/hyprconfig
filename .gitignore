@@ -1,6 +1,7 @@
-node_modules/
+/target/
+artifacts/
 .idea/
 .zed/
 .vscode/
-**/target/
-dist/
+# Left over from the Tauri/React version
+node_modules/

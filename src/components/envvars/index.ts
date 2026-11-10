@@ -1,1 +1,0 @@
-export { createEnvVarColumns } from "./columns";
