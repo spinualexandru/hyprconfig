@@ -24,7 +24,8 @@ check:
 snapshots theme="dark":
     cargo build
     mkdir -p artifacts
-    set -e; for s in $(target/debug/hyprconfig --list-scenes); do \
+    set -e; scenes=$(target/debug/hyprconfig --list-scenes); [ -n "$scenes" ]; \
+    for s in $scenes; do \
         target/debug/hyprconfig --scene "$s" --theme {{theme}} --size 1100x760 --at 1 \
             --snap "artifacts/$s-{{theme}}.png" --tree "artifacts/$s-{{theme}}.json" > /dev/null; \
     done
