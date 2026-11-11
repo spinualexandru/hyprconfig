@@ -181,6 +181,11 @@ pub const SCENES: &[Scene] = &[
         s.variables.list = Remote::ready(variable_entries());
         vars::start_edit(s, Kind::Variables, "terminal".into(), "kitty");
     }),
+    ("variables-picker", |s| {
+        s.page = Page::Variables;
+        s.variables.list = Remote::ready(variable_entries());
+        vars::open_picker(s, Kind::Variables, "activeBorder".into());
+    }),
     ("variables-add", |s| {
         s.page = Page::Variables;
         s.variables.list = Remote::ready(variable_entries());
@@ -475,6 +480,16 @@ pub fn variable_entries() -> Vec<Entry> {
             name: "gaps".into(),
             value: "5".into(),
             index: 3,
+        },
+        Entry {
+            name: "accent".into(),
+            value: "rgb(e2e2e9)".into(),
+            index: 4,
+        },
+        Entry {
+            name: "activeBorder".into(),
+            value: "rgba(33ccffee) rgba(00ff99ee) 45deg".into(),
+            index: 5,
         },
     ]
 }

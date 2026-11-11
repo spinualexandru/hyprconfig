@@ -2,6 +2,7 @@
 
 mod app;
 mod backend;
+mod color;
 mod dispatchers;
 mod fixtures;
 mod icons;
