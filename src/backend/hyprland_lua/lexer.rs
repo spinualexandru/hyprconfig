@@ -219,6 +219,23 @@ pub(super) fn split_top_level_spans(source: &str, separator: u8) -> Vec<(usize, 
     spans
 }
 
+/// The items separated by `separator` at nesting depth zero, trimmed.
+pub(super) fn split_top_level(source: &str, separator: u8) -> Vec<&str> {
+    split_top_level_spans(source, separator)
+        .into_iter()
+        .map(|(start, end)| &source[start..end])
+        .collect()
+}
+
+/// The body of a table constructor: `key = value` pairs joined with commas.
+pub(super) fn lua_table_fields(fields: &[(impl AsRef<str>, impl AsRef<str>)]) -> String {
+    fields
+        .iter()
+        .map(|(key, value)| format!("{} = {}", key.as_ref(), value.as_ref()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Bracket depth at the start of every line.
 pub(super) fn line_start_depths(masked: &str) -> Vec<(usize, i32)> {
     let bytes = masked.as_bytes();

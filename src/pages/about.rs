@@ -4,7 +4,7 @@ use rune_kit::{IconButton, IconButtonVariant, Kit, Progress};
 use crate::app::State;
 use crate::backend::hyprland::{self as hypr, SystemInfo};
 use crate::icons;
-use crate::jobs::Remote;
+use crate::jobs::{self, Remote};
 use crate::ui::{self, Card};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -15,11 +15,12 @@ pub struct AboutState {
 }
 
 pub fn load(s: &mut State) {
-    let attempt = s.about.info.begin();
-    s.jobs
-        .run("system-info", hypr::get_system_info, move |s, r, _| {
-            s.about.info.land(attempt, r);
-        });
+    jobs::load(
+        s,
+        "system-info",
+        |s| &mut s.about.info,
+        hypr::get_system_info,
+    );
 }
 
 /// "45.2 G", "1.5T", "500 M" (df) or "8.5 GB" (free) in gigabytes; 0 when unreadable.

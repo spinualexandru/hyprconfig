@@ -1,22 +1,24 @@
 //! The app's state, its shell (sidebar and page) and its lifecycle hooks.
 
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use rune::prefs::Prefs;
 use rune::{AppSpec, Cx, El, ImageCache, KeyEvent, Tx, Waker, col, row, text};
 use rune_kit::Kit;
 use rune_kit::shell::{self, PaneState, Sidebar, SidebarRow, SplitView};
 
-use crate::backend::hyprland::{self as hypr, ConfigInfo};
 use crate::backend::palette;
 use crate::ipc;
-use crate::jobs::{Jobs, Remote};
+use crate::jobs::Jobs;
 use crate::pages::{self, Page};
-use crate::theme::Palettes;
+use crate::theme::{Kits, Palettes};
 use crate::ui::Toasts;
 use crate::{backend, fixtures, icons};
 
 pub const APP_ID: &str = "hyprconfig";
+/// The pref holding the light or dark choice made in the sidebar.
+const DARK_PREF: &str = "dark";
 
 pub struct State {
     pub page: Page,
@@ -25,13 +27,12 @@ pub struct State {
     pub dark: Option<bool>,
     /// Noctalia's light or dark mode while it runs; it stands in for the desktop's.
     pub noctalia_dark: Option<bool>,
-    pub palettes: Palettes,
+    /// The kits for the current colours, light and dark.
+    pub kits: Kits,
     pub prefs: Option<Prefs>,
     pub jobs: Jobs,
     pub toasts: Toasts,
     pub images: Option<ImageCache>,
-    /// Whether the user's config is `hyprland.lua` or `hyprland.conf`.
-    pub config_info: Remote<ConfigInfo>,
     pub general: pages::general::GeneralState,
     pub about: pages::about::AboutState,
     pub appearance: pages::appearance::AppearanceState,
@@ -48,17 +49,20 @@ pub struct State {
 impl State {
     /// A fresh state that touches nothing on disk (tests, headless fixtures).
     pub fn new() -> State {
+        State::with_kits(Kits::default())
+    }
+
+    fn with_kits(kits: Kits) -> State {
         State {
             page: Page::General,
             sidebar: PaneState::new(232.0).range(180.0, 360.0),
             dark: None,
             noctalia_dark: None,
-            palettes: Palettes::default(),
+            kits,
             prefs: None,
             jobs: Jobs::new(),
             toasts: Toasts::default(),
             images: None,
-            config_info: Remote::default(),
             general: Default::default(),
             about: Default::default(),
             appearance: Default::default(),
@@ -78,24 +82,18 @@ impl State {
     /// before the first frame so it draws in the right colours; the generator reruns once the
     /// window is up.
     pub fn launch() -> State {
-        let mut s = State::new();
+        let palettes = palette::cached_css()
+            .or_else(|| backend::config::get_theme_css().ok())
+            .map(|css| Palettes::parse(&css))
+            .unwrap_or_default();
+        let mut s = State::with_kits(Kits::new(&palettes));
         let prefs = Prefs::open(APP_ID);
-        s.dark = prefs.get::<bool>("dark");
+        s.dark = prefs.get::<bool>(DARK_PREF);
         s.general.generator = prefs
             .get(pages::general::GENERATOR_PREF)
             .unwrap_or_default();
         s.prefs = Some(prefs);
-        if let Some(css) = palette::cached_css().or_else(|| backend::config::get_theme_css().ok()) {
-            s.palettes = Palettes::parse(&css);
-        }
         s
-    }
-
-    pub fn is_lua(&self) -> bool {
-        self.config_info
-            .data
-            .as_ref()
-            .is_some_and(|c| c.format == "lua")
     }
 }
 
@@ -108,21 +106,12 @@ impl Default for State {
 /// Runs once the native window has drawn: from here on, jobs reach the system.
 pub fn ready(s: &mut State, _tx: &mut Tx) {
     s.jobs.go_live();
-    load_config_info(s);
-    reload_theme(s);
+    pages::general::refresh_colors(s);
     load_noctalia_mode(s);
     pages::general::load_integration(s);
     listen(s);
     watch_theme(s);
     pages::enter(s, s.page);
-}
-
-pub fn load_config_info(s: &mut State) {
-    let attempt = s.config_info.begin();
-    s.jobs
-        .run("config-info", hypr::get_config_info, move |s, r, _| {
-            s.config_info.land(attempt, r);
-        });
 }
 
 pub fn navigate(s: &mut State, page: Page, tx: &mut Tx) {
@@ -133,25 +122,21 @@ pub fn navigate(s: &mut State, page: Page, tx: &mut Tx) {
     }
 }
 
-/// Recolours the app on a worker: the preferred generator, the other one, or `theme.css`
-/// (after matugen writes it). Run when the wallpaper or the preference changes.
-pub fn reload_theme(s: &mut State) {
-    pages::general::refresh_colors(s);
-}
-
 /// Recolours the app when its inputs change on disk: chromasync's config, hyprpaper's
 /// wallpaper, `theme.css` and Noctalia's settings, or with the Noctalia integration on, the
-/// palette Noctalia renders (its post hook usually reports that first).
+/// palette Noctalia renders. Noctalia's hook often reports the same change first; recolouring
+/// is idempotent, so the second report costs a resolve and nothing else, while a change the
+/// hook missed or read too early still lands.
 fn watch_theme(s: &mut State) {
     let hooked = s.general.hooked.clone();
     s.jobs.watch(
         "theme-files",
-        std::time::Duration::from_millis(750),
+        Duration::from_millis(750),
         move || palette::stamps(&palette::watched_paths(hooked.load(Ordering::Relaxed))),
         |s, _| {
             // Noctalia's settings hold its light or dark mode as well as its scheme.
             load_noctalia_mode(s);
-            reload_theme(s);
+            pages::general::refresh_colors(s);
         },
     );
 }
@@ -161,35 +146,35 @@ fn listen(s: &mut State) {
     s.jobs.stream(
         "ipc",
         |emit| match ipc::bind() {
-            Ok(listener) => {
-                ipc::serve_batched(listener, std::time::Duration::from_millis(300), |batch| {
-                    emit(batch)
-                })
-            }
+            Ok(listener) => ipc::serve_batched(listener, Duration::from_millis(300), emit),
             Err(e) => eprintln!("hyprconfig: not listening for changes: {e}"),
         },
         |s, batch: Vec<ipc::Event>, _| {
             if batch.contains(&ipc::Event::Mode) {
                 // Switching mode in Noctalia is newer than a choice made in the sidebar.
-                unpin_dark(s);
+                set_dark(s, None);
                 load_noctalia_mode(s);
             }
             if batch
                 .iter()
                 .any(|e| matches!(e, ipc::Event::Colors | ipc::Event::Wallpaper))
             {
-                reload_theme(s);
+                pages::general::refresh_colors(s);
             }
         },
     );
 }
 
-/// Forgets the sidebar's light or dark choice, so the desktop's (or Noctalia's) shows.
-pub fn unpin_dark(s: &mut State) {
-    s.dark = None;
-    if let Some(p) = s.prefs.as_mut()
-        && let Err(e) = p.remove("dark")
-    {
+/// Pins light or dark mode and saves the choice; `None` forgets it, so the desktop's (or
+/// Noctalia's) shows.
+pub fn set_dark(s: &mut State, dark: Option<bool>) {
+    s.dark = dark;
+    let Some(p) = s.prefs.as_mut() else { return };
+    let saved = match dark {
+        Some(dark) => p.set(DARK_PREF, &dark),
+        None => p.remove(DARK_PREF),
+    };
+    if let Err(e) = saved {
         eprintln!("hyprconfig: couldn't save the appearance: {e}");
     }
 }
@@ -204,28 +189,18 @@ pub fn load_noctalia_mode(s: &mut State) {
         });
 }
 
-fn toggle_dark(s: &mut State, dark_now: bool) {
-    let dark = !dark_now;
-    s.dark = Some(dark);
-    if let Some(p) = s.prefs.as_mut()
-        && let Err(e) = p.set("dark", &dark)
-    {
-        eprintln!("hyprconfig: couldn't save the appearance: {e}");
-    }
-}
-
-pub fn kit(s: &State, cx: &Cx<State>) -> (Kit, bool) {
+pub fn kit<'a>(s: &'a State, cx: &Cx<State>) -> (&'a Kit, bool) {
     let dark = s
         .dark
         .or(s.noctalia_dark)
         .unwrap_or_else(|| cx.system_dark());
-    (s.palettes.kit(dark), dark)
+    (s.kits.get(dark), dark)
 }
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let (k, dark) = kit(s, cx);
     let mut layers = Vec::new();
-    let main = pages::view(s, &k, cx, &mut layers);
+    let main = pages::view(s, k, cx, &mut layers);
 
     let brand = row()
         .key("brand")
@@ -270,28 +245,29 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
                 .icon(p.icon())
                 .selected(s.page == p)
                 .on_select(move |s: &mut State, tx| navigate(s, p, tx))
-                .build(&k)
+                .build(k)
                 .key(p.id()),
         );
     }
-    let theme_row = SidebarRow::new(if dark { "Dark Mode" } else { "Light Mode" })
-        .icon(if dark { &icons::MOON } else { &icons::SUN })
-        .on_select(move |s: &mut State, _| toggle_dark(s, dark))
-        .build(&k)
+    let (label, icon, help) = if dark {
+        ("Dark Mode", &icons::MOON, "Switch to light mode")
+    } else {
+        ("Light Mode", &icons::SUN, "Switch to dark mode")
+    };
+    let theme_row = SidebarRow::new(label)
+        .icon(icon)
+        .on_select(move |s: &mut State, _| set_dark(s, Some(!dark)))
+        .build(k)
         .key("theme")
-        .help(if dark {
-            "Switch to light mode"
-        } else {
-            "Switch to dark mode"
-        });
-    let sidebar = sidebar.footer(theme_row).build(&k);
+        .help(help);
+    let sidebar = sidebar.footer(theme_row).build(k);
 
     let shell = SplitView::new(main)
         .sidebar(&s.sidebar, |s: &mut State| &mut s.sidebar, sidebar)
         .titlebar_inset(cx.titlebar_inset())
         .reduced_motion(cx.is_reduced_motion())
-        .build(&k);
-    if let Some(t) = s.toasts.build(&k) {
+        .build(k);
+    if let Some(t) = s.toasts.build(k) {
         layers.push(t);
     }
     rune_kit::root(shell, layers)

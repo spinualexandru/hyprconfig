@@ -4,7 +4,7 @@ use rune_kit::{Button, ButtonVariant, Kit};
 use crate::app::State;
 use crate::backend::hyprland::{self as hypr, NetworkInterface, WifiNetwork};
 use crate::icons;
-use crate::jobs::Remote;
+use crate::jobs::{self, Remote};
 use crate::ui::{self, Card, Tone};
 
 #[derive(Default)]
@@ -21,13 +21,11 @@ pub fn load(s: &mut State) {
 }
 
 fn load_interfaces(s: &mut State) {
-    let attempt = s.network.interfaces.begin();
-    s.jobs.run(
+    jobs::load(
+        s,
         "network-interfaces",
+        |s| &mut s.network.interfaces,
         hypr::get_network_info,
-        move |s, r, _| {
-            s.network.interfaces.land(attempt, r);
-        },
     );
 }
 
@@ -36,12 +34,13 @@ fn scan_wifi(s: &mut State) {
     if s.network.wifi.loading {
         return;
     }
-    let attempt = s.network.wifi.begin();
-    s.jobs
-        .run("wifi-scan", hypr::scan_wifi_networks, move |s, r, _| {
-            // The scan fails quietly where there's no Wi-Fi or NetworkManager.
-            s.network.wifi.land(attempt, r.or_else(|_| Ok(Vec::new())));
-        });
+    // The scan fails quietly where there's no Wi-Fi or NetworkManager.
+    jobs::load(
+        s,
+        "wifi-scan",
+        |s| &mut s.network.wifi,
+        || hypr::scan_wifi_networks().or_else(|_| Ok(Vec::new())),
+    );
 }
 
 fn interface_title(i: &NetworkInterface) -> String {

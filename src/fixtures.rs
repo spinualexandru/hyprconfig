@@ -6,8 +6,7 @@ use rune::TextEdit;
 use crate::app::State;
 use crate::backend::audio::{AudioDevice, AudioState as Mixer, AudioStream};
 use crate::backend::hyprland::{
-    ConfigInfo, DisplayMode, Keybind, MonitorInfo, NetworkInterface, SystemInfo, Variable,
-    WifiNetwork,
+    DisplayMode, Keybind, MonitorInfo, NetworkInterface, SystemInfo, Variable, WifiNetwork,
 };
 use crate::backend::hyprpaper::{Daemon, HyprpaperConfig, Wallpaper};
 use crate::backend::palette::{Colors, Generator};
@@ -165,7 +164,7 @@ pub const SCENES: &[Scene] = &[
         let a = s.variables.list.begin();
         s.variables.list.land(
             a,
-            Err("Hyprland config file not found at \"~/.config/hypr/hyprland.conf\"".into()),
+            Err("Hyprland Lua config file not found at \"~/.config/hypr/hyprland.lua\"".into()),
         );
     }),
     ("displays-stale", |s| {
@@ -202,11 +201,6 @@ pub const SCENES: &[Scene] = &[
     }),
     ("layerrules-empty", |s| {
         s.page = Page::Layerrules;
-        s.config_info = Remote::ready(ConfigInfo {
-            path: "~/.config/hypr/hyprland.lua".into(),
-            format: "lua".into(),
-            exists: true,
-        });
         s.layerrules.names = Remote::ready(Vec::new());
     }),
     ("toasts", |s| {
@@ -438,11 +432,6 @@ pub fn keybind_data(s: &mut State) {
             source_file: None,
         },
     ];
-    s.config_info = Remote::ready(ConfigInfo {
-        path: "~/.config/hypr/hyprland.conf".into(),
-        format: "hyprlang".into(),
-        exists: true,
-    });
 }
 
 pub fn env_entries() -> Vec<Entry> {
@@ -491,11 +480,6 @@ pub fn variable_entries() -> Vec<Entry> {
 }
 
 pub fn rules_data(s: &mut State) {
-    s.config_info = Remote::ready(ConfigInfo {
-        path: "~/.config/hypr/hyprland.conf".into(),
-        format: "hyprlang".into(),
-        exists: true,
-    });
     s.windowrules.names = Remote::ready(vec![
         "float-pavucontrol".into(),
         "firefox-pip".into(),

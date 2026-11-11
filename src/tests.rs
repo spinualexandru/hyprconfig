@@ -61,7 +61,7 @@ fn the_sidebar_opens_a_page_and_asks_for_its_data() {
     assert_eq!(rt.state.page, Page::General);
     tap(&mut rt, "keybinds");
     assert_eq!(rt.state.page, Page::Keybinds);
-    for job in ["config-info", "keybinds", "bindu", "variables"] {
+    for job in ["keybinds", "bindu", "variables"] {
         assert!(asked(&rt, job), "{job} wasn't requested");
     }
     // A first load shows placeholders, not an empty state.
@@ -91,7 +91,7 @@ fn the_theme_row_flips_the_appearance() {
     tap(&mut rt, "theme");
     assert_eq!(rt.state.dark, Some(false));
     // A mode change reported by Noctalia's hook outranks that choice.
-    rt.update(|s, _| app::unpin_dark(s));
+    rt.update(|s, _| app::set_dark(s, None));
     assert_eq!(rt.state.dark, None);
 }
 
@@ -517,7 +517,7 @@ fn a_keybind_change_waits_for_the_reload_before_the_next() {
     assert_eq!(rt.state.keybinds.form, None);
     // As the delete and then its reload land:
     rt.update(|s, _| {
-        s.keybinds.binds.written();
+        s.keybinds.binds.after_write(true);
         let mut binds = fixtures::binds();
         binds.remove(2);
         land(&mut s.keybinds.binds, Ok(binds));
@@ -633,4 +633,29 @@ fn a_panicking_job_still_lands_and_the_writer_goes_on() {
     assert_eq!(rt.state.about.info.error.as_deref(), Some("Ok(7)"));
     let toast = &rt.state.toasts.items[0].text;
     assert!(toast.contains("boom crashed: kaboom"), "{toast}");
+}
+
+#[test]
+fn bind_commands_split_out_only_known_variables() {
+    let mut rt = on(Page::Keybinds, |s| {
+        fixtures::keybind_data(s);
+        let binds = s.keybinds.binds.data.as_mut().unwrap();
+        binds[0].params = "$terminalx".into();
+        binds[1].params = "$nope --flag".into();
+    });
+    run(&mut rt, 0.2);
+    assert!(
+        rt.find("bind-0/command/p0").is_some() && rt.find("bind-0/command/p1").is_some(),
+        "$terminal, then x"
+    );
+    assert!(rt.find("bind-0/command/p2").is_none());
+    assert!(rt.find("bind-1/command").is_some());
+    assert!(
+        rt.find("bind-1/command/p0").is_none(),
+        "an unknown variable stays plain text"
+    );
+    assert!(
+        rt.find("bind-2/command/p1").is_some(),
+        "${{menu}}, then the rest"
+    );
 }

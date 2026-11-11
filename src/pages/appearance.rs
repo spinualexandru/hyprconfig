@@ -10,7 +10,7 @@ use crate::backend::config::{self, MatugenPreferences};
 use crate::backend::hyprpaper::{self, HyprpaperConfig, Wallpaper};
 use crate::backend::os;
 use crate::icons;
-use crate::jobs::Remote;
+use crate::jobs::{self, Remote};
 use crate::ui::{self, Card};
 
 pub const GENERATORS: &[(&str, &str)] = &[
@@ -67,8 +67,8 @@ pub fn load(s: &mut State) {
     load_config(s);
     s.jobs.run(
         "matugen-exists",
-        || os::tool_exists("matugen".into()),
-        |s, exists, _| s.appearance.matugen = exists.unwrap_or(false),
+        || Ok(os::tool_exists("matugen")),
+        |s, exists: Result<bool, String>, _| s.appearance.matugen = exists.unwrap_or(false),
     );
     s.jobs
         .run("preferences", config::get_preferences, |s, r, _| {
@@ -79,15 +79,12 @@ pub fn load(s: &mut State) {
 }
 
 fn load_config(s: &mut State) {
-    let attempt = s.appearance.config.begin();
-    s.jobs.run(
+    jobs::load_then(
+        s,
         "hyprpaper",
+        |s| &mut s.appearance.config,
         hyprpaper::get_hyprpaper_config,
-        move |s, r, _| {
-            if s.appearance.config.land(attempt, r) {
-                show_current(s);
-            }
-        },
+        show_current,
     );
 }
 
@@ -189,7 +186,7 @@ pub fn set_wallpaper(s: &mut State, path: PathBuf) {
                 Ok((not_shown, synced)) => {
                     // The generators work from the wallpaper, and matugen may have rewritten
                     // theme.css: recolour either way.
-                    app::reload_theme(s);
+                    crate::pages::general::refresh_colors(s);
                     let mut problems = Vec::new();
                     if let Some(e) = not_shown {
                         problems.push(e);
@@ -240,7 +237,7 @@ fn regenerate_theme(s: &mut State) {
         },
         |s, r, tx| match r {
             Ok(()) => {
-                app::reload_theme(s);
+                crate::pages::general::refresh_colors(s);
                 s.toasts.success(tx, "Theme regenerated and reloaded");
             }
             Err(e) => app::fail(s, tx, "Failed to reload theme", e),

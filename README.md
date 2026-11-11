@@ -13,7 +13,8 @@ https://github.com/user-attachments/assets/4fa72335-f117-4fed-a3fb-e0b2b6437abb
 
 Configure hyprland using a GUI.
 
-Works with `hyprland.lua` (the only format Hyprland reads after 0.56) and with the legacy `hyprland.conf`.
+Edits `hyprland.lua`, the only format Hyprland reads after 0.56. The legacy `hyprland.conf` is not
+supported; migrate it to Lua first.
 
 Hyprconfig is a native Rust app drawn with [Rune](https://github.com/anomalyco/rune), a GPU UI
 framework (wgpu, winit). There is no web view or JavaScript.
@@ -39,7 +40,7 @@ just uninstall   # also takes the Noctalia integration out (`hyprconfig noctalia
 ```
 
 The window's app id is `hyprconfig`, for window rules such as
-`windowrule = float, class:^(hyprconfig)$`.
+`hl.window_rule({ match = { class = "^(hyprconfig)$" }, float = true })`.
 
 ## Development
 

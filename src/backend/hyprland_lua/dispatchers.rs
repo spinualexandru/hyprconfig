@@ -2,9 +2,41 @@
 //! expressions (what hyprland.lua contains).
 
 use super::lexer::*;
+use crate::dispatchers::{RAW_LUA, is_name_char, resolve_command, variable_name};
 use std::collections::{HashMap, HashSet};
 
-/// Translates a legacy dispatcher (as used by hyprlang binds and shown in the UI) into
+/// Dispatchers that take nothing, and the `hl.dsp` function each one calls.
+const NO_ARGS: &[(&str, &str)] = &[
+    ("centerwindow", "window.center"),
+    ("toggleswallow", "window.toggle_swallow"),
+    ("bringactivetotop", "window.bring_to_top"),
+    ("togglegroup", "group.toggle"),
+    ("exit", "exit"),
+    ("forcerendererreload", "force_renderer_reload"),
+    ("releaseinputcapture", "release_input_capture"),
+];
+
+/// Dispatchers whose params pass through as one string argument: the dispatcher, its
+/// `hl.dsp` function, and what the params are (for the error when they're missing).
+const ONE_STRING: &[(&str, &str, &str)] = &[
+    ("submap", "submap", "a submap name"),
+    ("layoutmsg", "layout", "a layout message"),
+    ("event", "event", "an event payload"),
+    ("global", "global", "a shortcut name"),
+];
+
+/// How the dispatchers with an `action` field spell toggle, on and off, in that order.
+const LOCK_WORDS: [&str; 3] = ["toggle", "lock", "unlock"];
+const SWITCH_WORDS: [&str; 3] = ["toggle", "on", "off"];
+/// The floating dispatchers are one `window.float` call with each of the three actions:
+/// each dispatcher and its action, in the toggle, on, off order `DspArgs::action` reads.
+const FLOAT_ACTIONS: [(&str, &str); 3] = [
+    ("togglefloating", "toggle"),
+    ("setfloating", "enable"),
+    ("settiled", "disable"),
+];
+
+/// Translates a classic dispatcher (as shown and edited in the UI) into
 /// its `hl.dsp.*` expression. The argument semantics follow Hyprland's own legacy
 /// translator (src/config/legacy/DispatcherTranslator.cpp, removed after 0.56).
 pub(super) fn dispatcher_to_lua_expr(
@@ -16,8 +48,25 @@ pub(super) fn dispatcher_to_lua_expr(
     let params = params.trim();
     let words = params.split_whitespace().collect::<Vec<_>>();
 
+    if let Some((_, function)) = NO_ARGS.iter().find(|(d, _)| *d == dispatcher) {
+        return Ok(format!("hl.dsp.{function}()"));
+    }
+    if let Some((_, function, what)) = ONE_STRING.iter().find(|(d, ..)| *d == dispatcher) {
+        let arg = lua_quote(required(params, dispatcher, what)?);
+        return Ok(format!("hl.dsp.{function}({arg})"));
+    }
+    if let Some((_, action)) = FLOAT_ACTIONS.iter().find(|(d, _)| *d == dispatcher) {
+        let mut fields = vec![("action", lua_quote(action))];
+        fields.extend(window_field(params));
+        return Ok(dsp_call("window.float", &fields));
+    }
+    // A call with one required field, quoted.
+    let one = |function: &str, key: &str, what: &str| {
+        required(params, dispatcher, what).map(|v| dsp_call(function, &[(key, lua_quote(v))]))
+    };
+
     let expr = match dispatcher {
-        "lua" => {
+        RAW_LUA => {
             if params.is_empty() {
                 return Err(
                     "The lua dispatcher needs an expression, e.g. hl.dsp.window.close()"
@@ -26,30 +75,19 @@ pub(super) fn dispatcher_to_lua_expr(
             }
             params.to_string()
         }
-        "exec" => format!(
-            "hl.dsp.exec_cmd({})",
-            lua_string_expr_with_vars(required(params, dispatcher, "a command")?, scope)
-        ),
-        "execr" => format!(
-            "hl.dsp.exec_raw({})",
+        "exec" | "execr" => format!(
+            "hl.dsp.{}({})",
+            if dispatcher == "exec" {
+                "exec_cmd"
+            } else {
+                "exec_raw"
+            },
             lua_string_expr_with_vars(required(params, dispatcher, "a command")?, scope)
         ),
         "killactive" => "hl.dsp.window.close()".to_string(),
         "forcekillactive" => "hl.dsp.window.kill()".to_string(),
-        "closewindow" => dsp_call(
-            "window.close",
-            &[(
-                "window",
-                lua_quote(required(params, dispatcher, "a window")?),
-            )],
-        ),
-        "killwindow" => dsp_call(
-            "window.kill",
-            &[(
-                "window",
-                lua_quote(required(params, dispatcher, "a window")?),
-            )],
-        ),
+        "closewindow" => one("window.close", "window", "a window")?,
+        "killwindow" => one("window.kill", "window", "a window")?,
         "signal" => dsp_call("window.signal", &[("signal", number(params, dispatcher)?)]),
         "signalwindow" => {
             let (window, signal) = params
@@ -62,16 +100,6 @@ pub(super) fn dispatcher_to_lua_expr(
                     ("window", lua_quote(window.trim())),
                 ],
             )
-        }
-        "togglefloating" | "setfloating" | "settiled" => {
-            let action = match dispatcher {
-                "togglefloating" => "toggle",
-                "setfloating" => "enable",
-                _ => "disable",
-            };
-            let mut fields = vec![("action", lua_quote(action))];
-            fields.extend(window_field(params));
-            dsp_call("window.float", &fields)
         }
         "pseudo" => dsp_call("window.pseudo", &window_field(params)),
         "pin" => dsp_call("window.pin", &window_field(params)),
@@ -155,9 +183,7 @@ pub(super) fn dispatcher_to_lua_expr(
             if dispatcher == "movetoworkspacesilent" {
                 fields.push(("follow", "false".to_string()));
             }
-            if let Some(window) = window.filter(|window| !window.is_empty()) {
-                fields.push(("window", lua_quote(window)));
-            }
+            fields.extend(given_window(window));
             dsp_call("window.move", &fields)
         }
         "movefocus" => dsp_call("focus", &[("direction", direction(params)?)]),
@@ -194,13 +220,13 @@ pub(super) fn dispatcher_to_lua_expr(
             ),
         },
         "swapnext" => {
-            if matches!(params, "l" | "last" | "prev" | "b" | "back") {
-                dsp_call("window.swap", &[("prev", "true".to_string())])
+            let way = if matches!(params, "l" | "last" | "prev" | "b" | "back") {
+                "prev"
             } else {
-                dsp_call("window.swap", &[("next", "true".to_string())])
-            }
+                "next"
+            };
+            dsp_call("window.swap", &[(way, "true".to_string())])
         }
-        "centerwindow" => "hl.dsp.window.center()".to_string(),
         "cyclenext" => {
             let mut fields = Vec::new();
             let has = |names: &[&str]| words.iter().any(|word| names.contains(word));
@@ -215,20 +241,8 @@ pub(super) fn dispatcher_to_lua_expr(
             }
             dsp_call("window.cycle_next", &fields)
         }
-        "focuswindow" | "focuswindowbyclass" => dsp_call(
-            "focus",
-            &[(
-                "window",
-                lua_quote(required(params, dispatcher, "a window")?),
-            )],
-        ),
-        "focusmonitor" => dsp_call(
-            "focus",
-            &[(
-                "monitor",
-                lua_quote(required(params, dispatcher, "a monitor")?),
-            )],
-        ),
+        "focuswindow" | "focuswindowbyclass" => one("focus", "window", "a window")?,
+        "focusmonitor" => one("focus", "monitor", "a monitor")?,
         "focusurgentorlast" => dsp_call("focus", &[("urgent_or_last", "true".to_string())]),
         "focuscurrentorlast" => dsp_call("focus", &[("last", "true".to_string())]),
         "resizeactive" | "moveactive" | "resizewindowpixel" | "movewindowpixel" => {
@@ -259,9 +273,7 @@ pub(super) fn dispatcher_to_lua_expr(
             if relative {
                 fields.push(("relative", "true".to_string()));
             }
-            if let Some(window) = window.filter(|window| !window.is_empty()) {
-                fields.push(("window", lua_quote(window)));
-            }
+            fields.extend(given_window(window));
             let function = if dispatcher.starts_with("resize") {
                 "window.resize"
             } else {
@@ -279,8 +291,6 @@ pub(super) fn dispatcher_to_lua_expr(
             }
             dsp_call("window.tag", &fields)
         }
-        "toggleswallow" => "hl.dsp.window.toggle_swallow()".to_string(),
-        "bringactivetotop" => "hl.dsp.window.bring_to_top()".to_string(),
         "alterzorder" => {
             let (mode, window) = match params.split_once(',') {
                 Some((mode, window)) => (mode.trim(), Some(window.trim())),
@@ -290,9 +300,7 @@ pub(super) fn dispatcher_to_lua_expr(
                 "mode",
                 lua_quote(required(mode, dispatcher, "top or bottom")?),
             )];
-            if let Some(window) = window.filter(|window| !window.is_empty()) {
-                fields.push(("window", lua_quote(window)));
-            }
+            fields.extend(given_window(window));
             dsp_call("window.alter_zorder", &fields)
         }
         "setprop" => {
@@ -308,24 +316,15 @@ pub(super) fn dispatcher_to_lua_expr(
                 ],
             )
         }
-        "mouse" => {
-            if params.contains("resize") {
-                match words.get(1).copied() {
-                    Some("1") => dsp_call(
-                        "window.resize",
-                        &[("keep_aspect_ratio", "true".to_string())],
-                    ),
-                    Some("2") => dsp_call(
-                        "window.resize",
-                        &[("keep_aspect_ratio", "false".to_string())],
-                    ),
-                    _ => "hl.dsp.window.resize()".to_string(),
-                }
-            } else {
-                "hl.dsp.window.drag()".to_string()
-            }
-        }
-        "togglegroup" => "hl.dsp.group.toggle()".to_string(),
+        "mouse" => match words.as_slice() {
+            ["movewindow"] => "hl.dsp.window.drag()".to_string(),
+            ["resizewindow"] => "hl.dsp.window.resize()".to_string(),
+            ["resizewindow", n @ ("1" | "2")] => dsp_call(
+                "window.resize",
+                &[("keep_aspect_ratio", (*n == "1").to_string())],
+            ),
+            _ => return Err("mouse expects movewindow or resizewindow [1|2]".to_string()),
+        },
         "changegroupactive" => match params {
             "b" | "prev" => "hl.dsp.group.prev()".to_string(),
             "" | "f" | "next" => "hl.dsp.group.next()".to_string(),
@@ -346,14 +345,14 @@ pub(super) fn dispatcher_to_lua_expr(
                 "hl.dsp.group.move_window()".to_string()
             }
         }
-        "lockgroups" => dsp_call("group.lock", &[("action", lua_quote(lock_action(params)?))]),
+        "lockgroups" => dsp_call("group.lock", &[action_field(params, LOCK_WORDS, true)?]),
         "lockactivegroup" => dsp_call(
             "group.lock_active",
-            &[("action", lua_quote(lock_action(params)?))],
+            &[action_field(params, LOCK_WORDS, true)?],
         ),
         "denywindowfromgroup" => dsp_call(
             "window.deny_from_group",
-            &[("action", lua_quote(toggle_action(params)?))],
+            &[action_field(params, SWITCH_WORDS, false)?],
         ),
         "moveintogroup" => dsp_call("window.move", &[("into_group", direction(params)?)]),
         "moveintoorcreategroup" => dsp_call(
@@ -381,13 +380,7 @@ pub(super) fn dispatcher_to_lua_expr(
                 ],
             )
         }
-        "movecurrentworkspacetomonitor" => dsp_call(
-            "workspace.move",
-            &[(
-                "monitor",
-                lua_quote(required(params, dispatcher, "a monitor")?),
-            )],
-        ),
+        "movecurrentworkspacetomonitor" => one("workspace.move", "monitor", "a monitor")?,
         "moveworkspacetomonitor" => {
             if words.len() != 2 {
                 return Err("moveworkspacetomonitor expects: workspace monitor".to_string());
@@ -419,45 +412,24 @@ pub(super) fn dispatcher_to_lua_expr(
                 format!("hl.dsp.workspace.toggle_special({})", lua_quote(params))
             }
         }
-        "submap" => format!(
-            "hl.dsp.submap({})",
-            lua_quote(required(params, dispatcher, "a submap name")?)
-        ),
-        "pass" => dsp_call(
-            "pass",
-            &[(
-                "window",
-                lua_quote(required(params, dispatcher, "a window")?),
-            )],
-        ),
+        "pass" => one("pass", "window", "a window")?,
         "sendshortcut" | "sendkeystate" => {
+            let (needed, usage, function) = if dispatcher == "sendshortcut" {
+                (2, "MODS, key[, window]", "send_shortcut")
+            } else {
+                (3, "MODS, key, down|up|repeat[, window]", "send_key_state")
+            };
             let parts = params.split(',').map(str::trim).collect::<Vec<_>>();
-            let needed = if dispatcher == "sendshortcut" { 2 } else { 3 };
             if parts.len() < needed || parts[1].is_empty() {
-                return Err(if dispatcher == "sendshortcut" {
-                    "sendshortcut expects: MODS, key[, window]".to_string()
-                } else {
-                    "sendkeystate expects: MODS, key, down|up|repeat[, window]".to_string()
-                });
+                return Err(format!("{dispatcher} expects: {usage}"));
             }
             let mut fields = vec![("mods", lua_quote(parts[0])), ("key", lua_quote(parts[1]))];
-            if dispatcher == "sendkeystate" {
+            if needed == 3 {
                 fields.push(("state", lua_quote(parts[2])));
             }
-            if let Some(window) = parts.get(needed).filter(|window| !window.is_empty()) {
-                fields.push(("window", lua_quote(window)));
-            }
-            let function = if dispatcher == "sendshortcut" {
-                "send_shortcut"
-            } else {
-                "send_key_state"
-            };
+            fields.extend(given_window(parts.get(needed).copied()));
             dsp_call(function, &fields)
         }
-        "layoutmsg" => format!(
-            "hl.dsp.layout({})",
-            lua_quote(required(params, dispatcher, "a layout message")?)
-        ),
         // Older configs used these as dispatchers; they are layout messages now.
         "togglesplit" | "swapsplit" | "splitratio" => format!(
             "hl.dsp.layout({})",
@@ -475,18 +447,7 @@ pub(super) fn dispatcher_to_lua_expr(
             }
             dsp_call("dpms", &fields)
         }
-        "exit" => "hl.dsp.exit()".to_string(),
-        "forcerendererreload" => "hl.dsp.force_renderer_reload()".to_string(),
         "forceidle" => format!("hl.dsp.force_idle({})", number(params, dispatcher)?),
-        "releaseinputcapture" => "hl.dsp.release_input_capture()".to_string(),
-        "event" => format!(
-            "hl.dsp.event({})",
-            lua_quote(required(params, dispatcher, "an event payload")?)
-        ),
-        "global" => format!(
-            "hl.dsp.global({})",
-            lua_quote(required(params, dispatcher, "a shortcut name")?)
-        ),
         other => {
             return Err(format!(
                 "'{}' has no Lua equivalent. Use the 'lua' dispatcher with an hl.dsp.* expression instead.",
@@ -502,11 +463,7 @@ fn dsp_call(function: &str, fields: &[(&str, String)]) -> String {
     if fields.is_empty() {
         format!("hl.dsp.{}()", function)
     } else {
-        let fields = fields
-            .iter()
-            .map(|(key, value)| format!("{} = {}", key, value))
-            .collect::<Vec<_>>();
-        format!("hl.dsp.{}({{ {} }})", function, fields.join(", "))
+        format!("hl.dsp.{}({{ {} }})", function, lua_table_fields(fields))
     }
 }
 
@@ -521,10 +478,9 @@ fn required<'a>(value: &'a str, dispatcher: &str, what: &str) -> Result<&'a str,
 
 fn number(value: &str, dispatcher: &str) -> Result<String, String> {
     let value = value.trim();
-    value
-        .parse::<f64>()
-        .map(|_| value.to_string())
-        .map_err(|_| format!("{} expects a number, got '{}'", dispatcher, value))
+    is_lua_number(value)
+        .then(|| value.to_string())
+        .ok_or_else(|| format!("{} expects a number, got '{}'", dispatcher, value))
 }
 
 fn pixel_number(value: &str, dispatcher: &str) -> Result<String, String> {
@@ -548,6 +504,13 @@ fn direction(value: &str) -> Result<String, String> {
     Ok(lua_quote(dir))
 }
 
+/// The `window` field for an optional selector, when one was given.
+fn given_window(window: Option<&str>) -> Option<(&'static str, String)> {
+    window
+        .filter(|window| !window.is_empty())
+        .map(|window| ("window", lua_quote(window)))
+}
+
 fn window_field(params: &str) -> Vec<(&'static str, String)> {
     let window = params.trim();
     if window.is_empty() || window == "active" {
@@ -557,22 +520,33 @@ fn window_field(params: &str) -> Vec<(&'static str, String)> {
     }
 }
 
-fn lock_action(params: &str) -> Result<&'static str, String> {
-    match params.trim() {
-        "" | "toggle" => Ok("toggle"),
-        "lock" => Ok("enable"),
-        "unlock" => Ok("disable"),
-        other => Err(format!("Expected lock, unlock or toggle, got '{}'", other)),
-    }
-}
-
-fn toggle_action(params: &str) -> Result<&'static str, String> {
-    match params.trim() {
-        "" | "toggle" => Ok("toggle"),
-        "on" => Ok("on"),
-        "off" => Ok("off"),
-        other => Err(format!("Expected on, off or toggle, got '{}'", other)),
-    }
+/// The `action` field for params that are one of `words` (toggle, on, off; empty means
+/// toggle). `hl.dsp` spells on and off as `enable`/`disable` when `enable` is set, else as-is.
+fn action_field(
+    params: &str,
+    [toggle, on, off]: [&str; 3],
+    enable: bool,
+) -> Result<(&'static str, String), String> {
+    let action = match params.trim() {
+        "" => "toggle",
+        p if p == toggle => "toggle",
+        p if p == on => {
+            if enable {
+                "enable"
+            } else {
+                "on"
+            }
+        }
+        p if p == off => {
+            if enable {
+                "disable"
+            } else {
+                "off"
+            }
+        }
+        other => return Err(format!("Expected {on}, {off} or {toggle}, got '{other}'")),
+    };
+    Ok(("action", lua_quote(action)))
 }
 
 /// Maps an `hl.dsp.*` expression back to a legacy dispatcher and params for the UI.
@@ -583,7 +557,7 @@ pub(super) fn parse_dispatcher_expr(
     variables: &HashMap<String, String>,
 ) -> (String, String) {
     parse_known_dispatcher(expr.trim(), variables)
-        .unwrap_or_else(|| ("lua".to_string(), collapse_whitespace(expr.trim())))
+        .unwrap_or_else(|| (RAW_LUA.to_string(), collapse_whitespace(expr.trim())))
 }
 
 struct DspArgs<'a> {
@@ -620,13 +594,25 @@ impl DspArgs<'_> {
     fn is_empty(&self) -> bool {
         match self.positional.as_slice() {
             [] => true,
-            [table] => {
-                table.len() >= 2
-                    && table.starts_with('{')
-                    && table.ends_with('}')
-                    && table[1..table.len() - 1].trim().is_empty()
-            }
+            [table] => table.starts_with('{') && table_entries(table).is_empty(),
             _ => false,
+        }
+    }
+
+    /// `key`'s value after `sep`, or nothing when the field is absent.
+    fn suffix(&self, key: &str, sep: &str) -> String {
+        self.string(key)
+            .map(|value| format!("{sep}{value}"))
+            .unwrap_or_default()
+    }
+
+    /// The `action` field mapped to the dispatcher's own words for toggle, on and off.
+    fn action(&self, [toggle, on, off]: [&'static str; 3]) -> Option<&'static str> {
+        match self.string("action").as_deref() {
+            None | Some("toggle") => Some(toggle),
+            Some("enable" | "on") => Some(on),
+            Some("disable" | "off") => Some(off),
+            Some(_) => None,
         }
     }
 
@@ -636,6 +622,10 @@ impl DspArgs<'_> {
             _ => None,
         }
     }
+}
+
+fn ok(dispatcher: &str, params: String) -> Option<(String, String)> {
+    Some((dispatcher.to_string(), params))
 }
 
 fn parse_known_dispatcher(
@@ -650,27 +640,27 @@ fn parse_known_dispatcher(
         return None;
     }
 
-    let inner = &rest[open + 1..close];
-    let positional = split_top_level_spans(inner, b',')
-        .into_iter()
-        .map(|(start, end)| &inner[start..end])
-        .collect::<Vec<_>>();
-    let fields = match positional.as_slice() {
-        [table] if table.starts_with('{') => parse_lua_table_fields(table),
-        _ => Vec::new(),
+    let positional = split_top_level(&rest[open + 1..close], b',');
+    let is_table = matches!(positional.as_slice(), [table] if table.starts_with('{'));
+    let fields = if is_table {
+        parse_lua_table_fields(positional[0])
+    } else {
+        Vec::new()
     };
     let args = DspArgs {
         positional,
         fields,
         variables,
     };
-    let is_table = args.positional.len() == 1 && args.positional[0].starts_with('{');
-    let ok = |dispatcher: &str, params: String| Some((dispatcher.to_string(), params));
-    let window_suffix = |sep: &str| {
-        args.string("window")
-            .map(|w| format!("{}{}", sep, w))
-            .unwrap_or_default()
-    };
+
+    if let Some((dispatcher, _)) = NO_ARGS.iter().find(|(_, f)| *f == name) {
+        return args
+            .is_empty()
+            .then(|| (dispatcher.to_string(), String::new()));
+    }
+    if let Some((dispatcher, ..)) = ONE_STRING.iter().find(|(_, f, _)| *f == name) {
+        return ok(dispatcher, args.positional_string()?);
+    }
 
     match name {
         "exec_cmd" if args.positional.len() == 1 => {
@@ -680,13 +670,6 @@ fn parse_known_dispatcher(
             "execr",
             lua_expr_to_template(args.positional[0], variables)?,
         ),
-        "exit" if args.is_empty() => ok("exit", String::new()),
-        "force_renderer_reload" if args.is_empty() => ok("forcerendererreload", String::new()),
-        "release_input_capture" if args.is_empty() => ok("releaseinputcapture", String::new()),
-        "submap" => ok("submap", args.positional_string()?),
-        "layout" => ok("layoutmsg", args.positional_string()?),
-        "event" => ok("event", args.positional_string()?),
-        "global" => ok("global", args.positional_string()?),
         "force_idle" => ok("forceidle", args.positional_string()?),
         "pass" if is_table && args.only(&["window"]) => ok("pass", args.string("window")?),
         "send_shortcut" if is_table && args.only(&["mods", "key", "window"]) => ok(
@@ -695,7 +678,7 @@ fn parse_known_dispatcher(
                 "{}, {}{}",
                 args.string("mods")?,
                 args.string("key")?,
-                window_suffix(", ")
+                args.suffix("window", ", ")
             ),
         ),
         "send_key_state" if is_table && args.only(&["mods", "key", "state", "window"]) => ok(
@@ -705,21 +688,12 @@ fn parse_known_dispatcher(
                 args.string("mods")?,
                 args.string("key")?,
                 args.string("state")?,
-                window_suffix(", ")
+                args.suffix("window", ", ")
             ),
         ),
         "dpms" if args.only(&["action", "monitor"]) => {
-            let action = match args.string("action").as_deref() {
-                None | Some("toggle") => "toggle",
-                Some("on" | "enable") => "on",
-                Some("off" | "disable") => "off",
-                Some(_) => return None,
-            };
-            let monitor = args
-                .string("monitor")
-                .map(|m| format!(" {}", m))
-                .unwrap_or_default();
-            ok("dpms", format!("{}{}", action, monitor))
+            let action = args.action(SWITCH_WORDS)?;
+            ok("dpms", format!("{}{}", action, args.suffix("monitor", " ")))
         }
         "focus" if is_table => {
             if let Some(dir) = args.string("direction") {
@@ -761,7 +735,6 @@ fn parse_known_dispatcher(
             "movecursor",
             format!("{} {}", args.string("x")?, args.string("y")?),
         ),
-        "group.toggle" if args.is_empty() => ok("togglegroup", String::new()),
         "group.next" if args.is_empty() => ok("changegroupactive", "f".to_string()),
         "group.prev" if args.is_empty() => ok("changegroupactive", "b".to_string()),
         "group.active" if is_table && args.only(&["index"]) => {
@@ -772,12 +745,7 @@ fn parse_known_dispatcher(
             _ => ok("movegroupwindow", String::new()),
         },
         "group.lock" | "group.lock_active" if args.only(&["action"]) => {
-            let action = match args.string("action").as_deref() {
-                None | Some("toggle") => "toggle",
-                Some("enable" | "on") => "lock",
-                Some("disable" | "off") => "unlock",
-                Some(_) => return None,
-            };
+            let action = args.action(LOCK_WORDS)?;
             let dispatcher = if name == "group.lock" {
                 "lockgroups"
             } else {
@@ -801,12 +769,7 @@ fn parse_known_dispatcher(
             }
         }
         "window.float" if args.only(&["action", "window"]) => {
-            let dispatcher = match args.string("action").as_deref() {
-                None | Some("toggle") => "togglefloating",
-                Some("enable" | "on") => "setfloating",
-                Some("disable" | "off") => "settiled",
-                Some(_) => return None,
-            };
+            let dispatcher = args.action(FLOAT_ACTIONS.map(|(d, _)| d))?;
             ok(dispatcher, args.string("window").unwrap_or_default())
         }
         "window.pseudo" | "window.pin"
@@ -835,17 +798,13 @@ fn parse_known_dispatcher(
             }
         }
         "window.fullscreen_state" if is_table && args.only(&["internal", "client", "action"]) => {
-            let action = args
-                .string("action")
-                .map(|a| format!(" {}", a))
-                .unwrap_or_default();
             ok(
                 "fullscreenstate",
                 format!(
                     "{} {}{}",
                     args.string("internal")?,
                     args.string("client")?,
-                    action
+                    args.suffix("action", " ")
                 ),
             )
         }
@@ -873,7 +832,6 @@ fn parse_known_dispatcher(
             }
             None
         }
-        "window.center" if args.is_empty() => ok("centerwindow", String::new()),
         "window.cycle_next" if args.only(&["next", "tiled", "floating"]) => {
             let mut words = Vec::new();
             if args.flag("next") == Some(false) {
@@ -893,13 +851,11 @@ fn parse_known_dispatcher(
         }
         "window.tag" if is_table && args.only(&["tag", "window"]) => ok(
             "tagwindow",
-            format!("{}{}", args.string("tag")?, window_suffix(" ")),
+            format!("{}{}", args.string("tag")?, args.suffix("window", " ")),
         ),
-        "window.toggle_swallow" if args.is_empty() => ok("toggleswallow", String::new()),
-        "window.bring_to_top" if args.is_empty() => ok("bringactivetotop", String::new()),
         "window.alter_zorder" if is_table && args.only(&["mode", "window"]) => ok(
             "alterzorder",
-            format!("{}{}", args.string("mode")?, window_suffix(",")),
+            format!("{}{}", args.string("mode")?, args.suffix("window", ",")),
         ),
         "window.set_prop" if is_table && args.only(&["prop", "value", "window"]) => ok(
             "setprop",
@@ -911,31 +867,21 @@ fn parse_known_dispatcher(
             ),
         ),
         "window.deny_from_group" if args.only(&["action"]) => {
-            let action = match args.string("action").as_deref() {
-                None | Some("toggle") => "toggle",
-                Some("enable" | "on") => "on",
-                Some("disable" | "off") => "off",
-                Some(_) => return None,
-            };
+            let action = args.action(SWITCH_WORDS)?;
             ok("denywindowfromgroup", action.to_string())
         }
         "workspace.toggle_special" => {
-            if args.positional.is_empty() {
-                ok("togglespecialworkspace", String::new())
+            let workspace = if args.positional.is_empty() {
+                String::new()
             } else {
-                ok("togglespecialworkspace", args.positional_string()?)
-            }
+                args.positional_string()?
+            };
+            ok("togglespecialworkspace", workspace)
         }
-        "workspace.rename" if is_table && args.only(&["workspace", "name"]) => {
-            let name = args
-                .string("name")
-                .map(|n| format!(" {}", n))
-                .unwrap_or_default();
-            ok(
-                "renameworkspace",
-                format!("{}{}", args.string("workspace")?, name),
-            )
-        }
+        "workspace.rename" if is_table && args.only(&["workspace", "name"]) => ok(
+            "renameworkspace",
+            format!("{}{}", args.string("workspace")?, args.suffix("name", " ")),
+        ),
         "workspace.move" if is_table && args.only(&["workspace", "monitor"]) => {
             let monitor = args.string("monitor")?;
             match args.string("workspace") {
@@ -955,8 +901,6 @@ fn parse_known_dispatcher(
 }
 
 fn parse_window_move(name: &str, args: &DspArgs) -> Option<(String, String)> {
-    let ok = |dispatcher: &str, params: String| Some((dispatcher.to_string(), params));
-
     if let (Some(x), Some(y)) = (args.string("x"), args.string("y")) {
         if !args.only(&["x", "y", "relative", "window"]) {
             return None;
@@ -980,15 +924,13 @@ fn parse_window_move(name: &str, args: &DspArgs) -> Option<(String, String)> {
     }
 
     if name == "window.resize" {
-        return match args.flag("keep_aspect_ratio") {
-            Some(true) if args.only(&["keep_aspect_ratio"]) => {
-                ok("mouse", "resizewindow 1".to_string())
-            }
-            Some(false) if args.only(&["keep_aspect_ratio"]) => {
-                ok("mouse", "resizewindow 2".to_string())
-            }
-            _ => None,
-        };
+        let keep = args
+            .flag("keep_aspect_ratio")
+            .filter(|_| args.only(&["keep_aspect_ratio"]))?;
+        return ok(
+            "mouse",
+            format!("resizewindow {}", if keep { 1 } else { 2 }),
+        );
     }
 
     if let Some(dir) = args.string("direction") {
@@ -1009,11 +951,10 @@ fn parse_window_move(name: &str, args: &DspArgs) -> Option<(String, String)> {
             Some(false) => "movetoworkspacesilent",
             _ => "movetoworkspace",
         };
-        let window = args
-            .string("window")
-            .map(|w| format!(",{}", w))
-            .unwrap_or_default();
-        return ok(dispatcher, format!("{}{}", workspace, window));
+        return ok(
+            dispatcher,
+            format!("{}{}", workspace, args.suffix("window", ",")),
+        );
     }
 
     if let Some(monitor) = args.string("monitor") {
@@ -1028,16 +969,13 @@ fn parse_window_move(name: &str, args: &DspArgs) -> Option<(String, String)> {
         return ok("movewindow", format!("mon:{}{}", monitor, silent));
     }
 
-    if let Some(dir) = args.string("into_group") {
-        return args
-            .only(&["into_group"])
-            .then(|| ("moveintogroup".to_string(), dir));
-    }
-
-    if let Some(dir) = args.string("into_or_create_group") {
-        return args
-            .only(&["into_or_create_group"])
-            .then(|| ("moveintoorcreategroup".to_string(), dir));
+    for (key, dispatcher) in [
+        ("into_group", "moveintogroup"),
+        ("into_or_create_group", "moveintoorcreategroup"),
+    ] {
+        if let Some(dir) = args.string(key) {
+            return args.only(&[key]).then(|| (dispatcher.to_string(), dir));
+        }
     }
 
     if args.flag("out_of_group") == Some(true) && args.only(&["out_of_group", "window"]) {
@@ -1075,7 +1013,7 @@ pub(super) fn lua_expr_to_template(
             eval_lua_string_expr(part, variables)?
         };
         if let Some(name) = open_variable.take() {
-            let glued = text.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_');
+            let glued = text.starts_with(is_name_char);
             out.push_str(&if glued {
                 format!("${{{}}}", name)
             } else {
@@ -1093,53 +1031,67 @@ pub(super) fn lua_expr_to_template(
 /// Converts a `$var` template into a Lua string expression. Only names assigned in the
 /// target file become identifiers, so shell variables like `$HOME` stay literal.
 pub(super) fn lua_string_expr_with_vars(value: &str, scope: &HashSet<String>) -> String {
-    let chars = value.chars().collect::<Vec<_>>();
-    let mut parts = Vec::new();
-    let mut literal = String::new();
-    let mut i = 0usize;
+    let parts = resolve_command(value, |name| scope.contains(name));
+    if parts.is_empty() {
+        return lua_quote("");
+    }
+    parts
+        .iter()
+        .map(|part| {
+            if part.variable {
+                variable_name(&part.text).to_string()
+            } else {
+                lua_quote(&part.text)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" .. ")
+}
 
-    while i < chars.len() {
-        if chars[i] == '$'
-            && chars.get(i + 1) == Some(&'{')
-            && let Some(close) = chars[i + 2..].iter().position(|c| *c == '}')
-        {
-            let name = chars[i + 2..i + 2 + close].iter().collect::<String>();
-            if scope.contains(&name) {
-                if !literal.is_empty() {
-                    parts.push(lua_quote(&literal));
-                    literal.clear();
-                }
-                parts.push(name);
-                i += close + 3;
-                continue;
+#[cfg(test)]
+mod tests {
+    use super::{dispatcher_to_lua_expr, parse_dispatcher_expr};
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn every_suggested_dispatcher_has_a_lua_form() {
+        let scope = HashSet::new();
+        for (name, _) in crate::dispatchers::DISPATCHERS {
+            if let Err(e) = dispatcher_to_lua_expr(name, "", &scope) {
+                assert!(!e.contains("no Lua equivalent"), "{name}: {e}");
             }
         }
-        if chars[i] == '$' {
-            let mut end = i + 1;
-            while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_') {
-                end += 1;
-            }
-            // Longest known name wins, so `$terminalx` still resolves `terminal`.
-            let name = (i + 2..=end)
-                .rev()
-                .map(|stop| chars[i + 1..stop].iter().collect::<String>())
-                .find(|name| scope.contains(name));
-            if let Some(name) = name {
-                if !literal.is_empty() {
-                    parts.push(lua_quote(&literal));
-                    literal.clear();
-                }
-                i += 1 + name.chars().count();
-                parts.push(name);
-                continue;
-            }
-        }
-        literal.push(chars[i]);
-        i += 1;
     }
 
-    if !literal.is_empty() || parts.is_empty() {
-        parts.push(lua_quote(&literal));
+    #[test]
+    fn floating_dispatchers_map_to_their_actions() {
+        let scope = HashSet::new();
+        let vars = HashMap::new();
+        for (dispatcher, action) in [
+            ("togglefloating", "toggle"),
+            ("setfloating", "enable"),
+            ("settiled", "disable"),
+        ] {
+            let expr = dispatcher_to_lua_expr(dispatcher, "class:mpv", &scope).unwrap();
+            assert_eq!(
+                expr,
+                format!("hl.dsp.window.float({{ action = \"{action}\", window = \"class:mpv\" }})")
+            );
+            assert_eq!(
+                parse_dispatcher_expr(&expr, &vars),
+                (dispatcher.to_string(), "class:mpv".to_string())
+            );
+        }
     }
-    parts.join(" .. ")
+
+    #[test]
+    fn rejects_params_hl_dsp_cant_take() {
+        let scope = HashSet::new();
+        assert!(dispatcher_to_lua_expr("forceidle", "inf", &scope).is_err());
+        assert!(dispatcher_to_lua_expr("mouse", "dragwindow", &scope).is_err());
+        assert_eq!(
+            dispatcher_to_lua_expr("mouse", "resizewindow 1", &scope).unwrap(),
+            "hl.dsp.window.resize({ keep_aspect_ratio = true })"
+        );
+    }
 }

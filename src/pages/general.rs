@@ -7,8 +7,7 @@ use rune_kit::{IconButton, IconButtonVariant, Kit, SegmentedControl, Switch};
 use crate::app::{self, State};
 use crate::backend::palette::{self, Colors, Generator};
 use crate::icons;
-use crate::jobs::Remote;
-use crate::theme::Palettes;
+use crate::jobs::{self, Remote};
 use crate::ui::{self, Card};
 
 /// The `prefs.json` key holding the preferred colour generator.
@@ -31,15 +30,14 @@ pub struct GeneralState {
 }
 
 pub fn load_integration(s: &mut State) {
-    let attempt = s.general.integration.begin();
-    s.jobs.run(
+    jobs::load_then(
+        s,
         "noctalia-integration",
+        |s| &mut s.general.integration,
         palette::noctalia_integration,
-        move |s, r, _| {
-            if s.general.integration.land(attempt, r) {
-                let on = s.general.integration.data == Some(Some(true));
-                s.general.hooked.store(on, Ordering::Relaxed);
-            }
+        |s| {
+            let on = s.general.integration.data == Some(Some(true));
+            s.general.hooked.store(on, Ordering::Relaxed);
         },
     );
 }
@@ -63,13 +61,15 @@ fn set_integration(s: &mut State, on: bool) {
             load_integration(s);
             // Noctalia renders the template on reload, and its post hook usually reports
             // that; recolour anyway in case it was quicker than the listener.
-            app::reload_theme(s);
+            refresh_colors(s);
         },
     );
 }
 
 /// Recolours the app from the generators (preferred first), or `theme.css` when neither
-/// answers, and caches the result for the next launch.
+/// answers, and caches the result for the next launch. Idempotent: colours that match the
+/// ones in use rebuild nothing and write nothing, so the hook and the file watcher can both
+/// report one change.
 pub fn refresh_colors(s: &mut State) {
     let attempt = s.general.colors.begin();
     let preferred = s.general.generator;
@@ -77,14 +77,17 @@ pub fn refresh_colors(s: &mut State) {
         "colors",
         move || palette::resolve(preferred),
         move |s, r, _| {
+            let before = s.general.colors.data.as_ref().map(cache_entry);
             if !s.general.colors.land(attempt, r) {
                 return;
             }
             let Some(c) = &s.general.colors.data else {
                 return;
             };
-            s.palettes = Palettes::parse(&c.css);
-            let cache = c.used.map(|_| c.css.clone());
+            s.kits.update(&c.css);
+            let Some(cache) = cache_change(before, c) else {
+                return;
+            };
             s.jobs.write(
                 "colors-cache",
                 move || palette::save_cache(cache),
@@ -96,6 +99,18 @@ pub fn refresh_colors(s: &mut State) {
             );
         },
     );
+}
+
+/// What the launch cache holds for these colours: a generator's CSS, or nothing for
+/// `theme.css` (which is read directly).
+fn cache_entry(c: &Colors) -> Option<String> {
+    c.used.map(|_| c.css.clone())
+}
+
+/// The cache to write for `now`, or `None` when it's what the last colours (`before`) wrote.
+fn cache_change(before: Option<Option<String>>, now: &Colors) -> Option<Option<String>> {
+    let entry = cache_entry(now);
+    (before.as_ref() != Some(&entry)).then_some(entry)
 }
 
 pub fn choose_generator(s: &mut State, g: Generator) {
@@ -241,4 +256,54 @@ pub fn view(s: &State, k: &Kit) -> El {
         Vec::new(),
         vec![colors_card(s, k)],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn colors(used: Option<Generator>, css: &str) -> Colors {
+        Colors {
+            used,
+            css: css.into(),
+            skipped: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_same_colours_write_no_cache() {
+        let chroma = colors(Some(Generator::Chromasync), ":root {}");
+        assert_eq!(
+            cache_change(None, &chroma),
+            Some(Some(":root {}".into())),
+            "the first colours"
+        );
+        let before = Some(cache_entry(&chroma));
+        assert_eq!(
+            cache_change(before.clone(), &chroma),
+            None,
+            "reported twice"
+        );
+        assert_eq!(
+            cache_change(
+                before.clone(),
+                &colors(Some(Generator::Noctalia), ":root {}")
+            ),
+            None,
+            "another generator, the same CSS"
+        );
+        assert_eq!(
+            cache_change(
+                before.clone(),
+                &colors(Some(Generator::Chromasync), ".dark {}")
+            ),
+            Some(Some(".dark {}".into()))
+        );
+        assert_eq!(
+            cache_change(before, &colors(None, ":root {}")),
+            Some(None),
+            "theme.css in use forgets the cache"
+        );
+        assert_eq!(cache_change(Some(None), &colors(None, ":root {}")), None);
+    }
 }

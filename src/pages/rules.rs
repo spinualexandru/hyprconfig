@@ -90,9 +90,6 @@ fn fetch_detail(kind: Kind, name: String) -> Result<RuleDetail, String> {
 }
 
 pub fn load(s: &mut State, kind: Kind) {
-    if s.config_info.data.is_none() && !s.config_info.loading {
-        app::load_config_info(s);
-    }
     let attempt = of(s, kind).names.begin();
     s.jobs.run(
         "rule-names",
@@ -164,14 +161,11 @@ pub fn delete(s: &mut State, kind: Kind, name: String) {
             Kind::Window => hypr::delete_windowrule(name),
             Kind::Layer => hypr::delete_layerrule(name),
         },
-        move |s, r, tx| match r {
-            Ok(()) => {
-                of(s, kind).names.written();
-                load(s, kind);
-            }
-            Err(e) => {
-                of(s, kind).names.release();
-                app::fail(s, tx, "Failed to delete the rule", e);
+        move |s, r, tx| {
+            of(s, kind).names.after_write(r.is_ok());
+            match r {
+                Ok(()) => load(s, kind),
+                Err(e) => app::fail(s, tx, "Failed to delete the rule", e),
             }
         },
     );
@@ -370,14 +364,16 @@ pub fn view(s: &State, k: &Kit, kind: Kind) -> El {
         ),
         None => {}
         Some([]) => {
-            let hint = match (kind, s.config_info.data.as_ref().map(|c| c.format.as_str())) {
-                (Kind::Window, Some("hyprlang")) => "Windowrules v3 use the special category syntax: windowrule[name] { ... }".to_owned(),
-                (Kind::Layer, Some("hyprlang")) => "Layerrules v2 use the special category syntax: layerrule[name] { ... }".to_owned(),
-                (Kind::Window, _) => "Rules are declared with hl.window_rule({ match = { class = \"...\" }, float = true }). Rules without a name are listed by position.".to_owned(),
-                (Kind::Layer, _) => "Rules are declared with hl.layer_rule({ match = { namespace = \"...\" }, blur = true }). Rules without a name are listed by position.".to_owned(),
+            let hint = match kind {
+                Kind::Window => {
+                    "Rules are declared with hl.window_rule({ match = { class = \"...\" }, float = true }). Rules without a name are listed by position."
+                }
+                Kind::Layer => {
+                    "Rules are declared with hl.layer_rule({ match = { namespace = \"...\" }, blur = true }). Rules without a name are listed by position."
+                }
             };
             let first = format!("No {singular}s found in your Hyprland configuration.");
-            body.push(ui::note_card(k, "empty", &[&first, &hint]));
+            body.push(ui::note_card(k, "empty", &[&first, hint]));
         }
         Some(names) => body.push(
             Card::new()

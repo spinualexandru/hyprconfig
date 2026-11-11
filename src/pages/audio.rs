@@ -7,7 +7,7 @@ use rune_kit::{Button, ButtonVariant, IconButton, IconButtonVariant, Kit};
 use crate::app::{self, State};
 use crate::backend::audio::{self as backend, AudioDevice, AudioState as Mixer, AudioStream};
 use crate::icons;
-use crate::jobs::Remote;
+use crate::jobs::{self, Remote};
 use crate::ui::{self, Tone};
 
 /// Seconds a volume waits for the slider to stop before it's sent to PipeWire.
@@ -33,11 +33,12 @@ fn newest(latest: &Mutex<HashMap<u32, u64>>, node: u32, n: u64) -> bool {
 }
 
 pub fn load(s: &mut State) {
-    let attempt = s.audio.mixer.begin();
-    s.jobs
-        .run("audio-state", backend::get_audio_state, move |s, r, _| {
-            s.audio.mixer.land(attempt, r);
-        });
+    jobs::load(
+        s,
+        "audio-state",
+        |s| &mut s.audio.mixer,
+        backend::get_audio_state,
+    );
 }
 
 fn each_node(m: &mut Mixer, id: u32, mut f: impl FnMut(&mut f32, &mut bool)) {

@@ -4,7 +4,7 @@ use rune_kit::{Button, ButtonVariant, Dialog, Kit, Select, SelectAppearance};
 use crate::app::{self, State};
 use crate::backend::hyprland::{self as hypr, MonitorInfo};
 use crate::icons;
-use crate::jobs::Remote;
+use crate::jobs::{self, Remote};
 use crate::ui::{self, Card};
 
 /// Seconds the new settings stay unless the user keeps them.
@@ -101,15 +101,18 @@ pub fn load(s: &mut State) {
     if s.displays.phase != Phase::Editing {
         return;
     }
-    let attempt = s.displays.monitors.begin();
-    s.jobs.run("monitors", hypr::get_monitors, move |s, r, _| {
-        if s.displays.monitors.land(attempt, r)
-            && let Some(m) = &s.displays.monitors.data
-        {
-            s.displays.original = m.clone();
-            s.displays.chosen = chosen_from(m);
-        }
-    });
+    jobs::load_then(
+        s,
+        "monitors",
+        |s| &mut s.displays.monitors,
+        hypr::get_monitors,
+        |s| {
+            if let Some(m) = &s.displays.monitors.data {
+                s.displays.original = m.clone();
+                s.displays.chosen = chosen_from(m);
+            }
+        },
+    );
 }
 
 pub fn dirty(d: &DisplaysState) -> bool {

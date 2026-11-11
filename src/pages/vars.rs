@@ -200,12 +200,9 @@ fn checked(
 
 /// A write to the list landed: settle and reload, or keep the rows and say why.
 fn written(s: &mut State, kind: Kind, r: &Result<(), String>) {
-    let v = of(s, kind);
+    of(s, kind).list.after_write(r.is_ok());
     if r.is_ok() {
-        v.list.written();
         load(s, kind);
-    } else {
-        v.list.release();
     }
 }
 

@@ -13,61 +13,38 @@ mod lexer;
 use dispatchers::*;
 use lexer::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HyprlandConfigFormat {
-    Hyprlang,
-    Lua,
-}
-
-#[derive(Debug, Clone)]
-pub struct HyprlandConfig {
-    pub path: PathBuf,
-    pub format: HyprlandConfigFormat,
-}
-
-/// Resolves the config the same way Hyprland does: `HYPRLAND_CONFIG` first, then
-/// `hypr/hyprland.lua`. Hyprland removed `hyprland.conf` support after 0.56, so the
-/// legacy file is only used when no Lua config exists yet.
-pub fn get_preferred_config() -> Result<HyprlandConfig, String> {
+/// The config Hyprland reads: `HYPRLAND_CONFIG` first, then `hypr/hyprland.lua`. Only Lua
+/// configs are supported; Hyprland itself stopped reading `hyprland.conf` after 0.56.
+pub fn config_path() -> Result<PathBuf, String> {
     if let Ok(path) = std::env::var("HYPRLAND_CONFIG")
         && !path.trim().is_empty()
     {
         let path = PathBuf::from(path);
-        return Ok(HyprlandConfig {
-            format: format_for_path(&path),
-            path,
-        });
+        if path.extension().and_then(|e| e.to_str()) != Some("lua") {
+            return Err(format!(
+                "HYPRLAND_CONFIG points to {}, but Hyprconfig only edits hyprland.lua configs",
+                path.display()
+            ));
+        }
+        return Ok(path);
     }
 
-    let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg_config)
-    } else {
-        let home_dir =
-            std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-        PathBuf::from(home_dir).join(".config")
+    let config_dir = match std::env::var("XDG_CONFIG_HOME") {
+        Ok(xdg_config) => PathBuf::from(xdg_config),
+        Err(_) => std::env::var("HOME")
+            .map(|home| PathBuf::from(home).join(".config"))
+            .map_err(|_| "Could not determine home directory".to_string())?,
     };
-
     let hypr_dir = config_dir.join("hypr");
     let lua_path = hypr_dir.join("hyprland.lua");
-    if lua_path.exists() {
-        return Ok(HyprlandConfig {
-            path: lua_path,
-            format: HyprlandConfigFormat::Lua,
-        });
+    if !lua_path.exists() && hypr_dir.join("hyprland.conf").exists() {
+        return Err(format!(
+            "Found hyprland.conf but no hyprland.lua in {}. Hyprland reads only hyprland.lua \
+             since 0.56; migrate your config to edit it here.",
+            hypr_dir.display()
+        ));
     }
-
-    Ok(HyprlandConfig {
-        path: hypr_dir.join("hyprland.conf"),
-        format: HyprlandConfigFormat::Hyprlang,
-    })
-}
-
-fn format_for_path(path: &Path) -> HyprlandConfigFormat {
-    if path.extension().and_then(|e| e.to_str()) == Some("lua") {
-        HyprlandConfigFormat::Lua
-    } else {
-        HyprlandConfigFormat::Hyprlang
-    }
+    Ok(lua_path)
 }
 
 // ============================================================================
@@ -130,10 +107,7 @@ impl LuaStatement {
     }
 
     fn args_list(&self) -> Vec<&str> {
-        split_top_level_spans(&self.args, b',')
-            .into_iter()
-            .map(|(start, end)| &self.args[start..end])
-            .collect()
+        split_top_level(&self.args, b',')
     }
 }
 
@@ -801,14 +775,10 @@ fn monitor_fields(layout: &MonitorLayout) -> Vec<(String, String)> {
 /// Lua for `hyprctl eval`: `hl.monitor` merges into the existing rule for the output
 /// and schedules a monitor refresh, replacing the removed `hyprctl keyword monitor`.
 pub fn monitor_eval_code(name: &str, layout: &MonitorLayout) -> String {
-    let fields = monitor_fields(layout)
-        .into_iter()
-        .map(|(key, value)| format!("{} = {}", key, value))
-        .collect::<Vec<_>>();
     format!(
         "hl.monitor({{ output = {}, {} }})",
         lua_quote(name),
-        fields.join(", ")
+        lua_table_fields(&monitor_fields(layout))
     )
 }
 
@@ -1455,11 +1425,7 @@ fn table_insert_edit(
         return Edit::insert(content_end, text);
     }
 
-    let joined = fields
-        .iter()
-        .map(|(key, value)| format!("{} = {}", key, value))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let joined = lua_table_fields(fields);
     if has_content {
         let separator = if needs_comma { ", " } else { " " };
         Edit::insert(content_end, format!("{}{}", separator, joined))

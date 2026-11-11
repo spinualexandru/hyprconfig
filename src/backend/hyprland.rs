@@ -1,4 +1,4 @@
-use hyprlang::Hyprland;
+use crate::backend::hyprland_lua as lua;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -699,26 +699,10 @@ fn get_cpu_info() -> String {
     "Unknown".to_string()
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ConfigInfo {
-    pub path: String,
-    /// "lua" or "hyprlang"
-    pub format: String,
-    pub exists: bool,
-}
-
-pub fn get_config_info() -> Result<ConfigInfo, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    Ok(ConfigInfo {
-        path: config.path.display().to_string(),
-        format: match config.format {
-            crate::backend::hyprland_lua::HyprlandConfigFormat::Lua => "lua",
-            crate::backend::hyprland_lua::HyprlandConfigFormat::Hyprlang => "hyprlang",
-        }
-        .to_string(),
-        exists: config.path.exists(),
-    })
-}
+// ============================================================================
+// Config: everything below reads or edits the user's `hyprland.lua`, through
+// `hyprland_lua`, after resolving which file that is.
+// ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Keybind {
@@ -728,225 +712,12 @@ pub struct Keybind {
     pub params: String,
 }
 
-pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_keybinds(&config.path);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Get all bind handler calls
-    let binds = hypr
-        .config()
-        .all_handler_calls()
-        .get("bind")
-        .cloned()
-        .unwrap_or_else(Vec::new);
-
-    println!("binds: {:?}", binds);
-
-    let mut keybinds = Vec::new();
-
-    for bind_str in binds {
-        // Parse bind format: "MODS, KEY, dispatcher, params"
-        // Example: "SUPER, Q, exec, kitty"
-        let parts: Vec<&str> = bind_str.split(',').map(|s| s.trim()).collect();
-
-        if parts.len() >= 3 {
-            let mods_str = parts[0];
-            let key = parts[1].to_string();
-            let dispatcher = parts[2].to_string();
-            let params = if parts.len() > 3 {
-                parts[3..].join(", ")
-            } else {
-                String::new()
-            };
-
-            // Split modifiers by space or underscore
-            let modifiers: Vec<String> = mods_str
-                .split(|c: char| c.is_whitespace() || c == '_')
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .collect();
-
-            keybinds.push(Keybind {
-                modifiers,
-                key,
-                dispatcher,
-                params,
-            });
-        }
-    }
-
-    Ok(keybinds)
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Variable {
     pub name: String,
     pub value: String,
     pub source_file: Option<String>,
 }
-
-pub fn get_variables() -> Result<Vec<Variable>, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_variables(&config.path);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    let hypr_dir = config_path.parent().unwrap();
-    let variables_map = hypr.config().variables();
-    let mut variables = Vec::new();
-
-    for (name, value) in variables_map {
-        // Get source file using variable key format "$VARNAME"
-        let source_file = hypr
-            .config()
-            .get_key_source_file(&format!("${}", name))
-            .map(|p| p.strip_prefix(hypr_dir).unwrap_or(p).display().to_string());
-
-        variables.push(Variable {
-            name: name.clone(),
-            value: value.clone(),
-            source_file,
-        });
-    }
-
-    // Sort by name for consistent display
-    variables.sort_by(|a, b| a.name.cmp(&b.name));
-
-    Ok(variables)
-}
-
-pub fn set_variable(name: String, value: String) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::set_variable(&config.path, name, value);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Set the variable (mutation API)
-    hypr.config_mut().set_variable(name.clone(), value.clone());
-
-    // Save the config file
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
-}
-
-pub fn add_variable(name: String, value: String) -> Result<(), String> {
-    // Validate variable name (alphanumeric + underscore only)
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return Err(
-            "Variable name must contain only letters, numbers, and underscores".to_string(),
-        );
-    }
-
-    if name.is_empty() {
-        return Err("Variable name cannot be empty".to_string());
-    }
-
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::add_variable(&config.path, name, value);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Add the variable (same as set_variable in hyprlang)
-    hypr.config_mut().set_variable(name.clone(), value.clone());
-
-    // Save the config file
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
-}
-
-pub fn delete_variable(name: String) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::delete_variable(&config.path, name);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Remove the variable (mutation API)
-    hypr.config_mut().remove_variable(&name);
-
-    // Save the config file
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
-}
-
-// ============================================================================
-// Environment Variables (env = NAME,value handler calls)
-// ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EnvVar {
@@ -956,170 +727,38 @@ pub struct EnvVar {
     pub source_file: Option<String>,
 }
 
-pub fn get_env_vars() -> Result<Vec<EnvVar>, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_env_vars(&config.path);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    let hypr_dir = config_path.parent().unwrap();
-
-    // Get all "env" handler calls
-    let envs = hypr
-        .config()
-        .all_handler_calls()
-        .get("env")
-        .cloned()
-        .unwrap_or_else(Vec::new);
-
-    let mut env_vars = Vec::new();
-
-    for (index, env_str) in envs.iter().enumerate() {
-        // Parse "NAME,value" format - split on first comma only
-        if let Some(comma_pos) = env_str.find(',') {
-            let name = env_str[..comma_pos].trim().to_string();
-            let value = env_str[comma_pos + 1..].trim().to_string();
-
-            // Get source file for this env entry
-            let source_file = hypr
-                .config()
-                .get_key_source_file(&format!("env:{}", index))
-                .map(|p| p.strip_prefix(hypr_dir).unwrap_or(p).display().to_string());
-
-            env_vars.push(EnvVar {
-                name,
-                value,
-                index,
-                source_file,
-            });
-        }
-    }
-
-    // Sort by name for consistent display
-    env_vars.sort_by(|a, b| a.name.cmp(&b.name));
-
-    Ok(env_vars)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WindowruleProperty {
+    pub key: String,
+    pub value: String,
+    pub property_type: String,
 }
 
-pub fn add_env_var(name: String, value: String) -> Result<(), String> {
-    if name.is_empty() {
-        return Err("Environment variable name cannot be empty".to_string());
-    }
-
-    // Env var names: letters, numbers, underscores
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return Err(
-            "Environment variable name must contain only letters, numbers, and underscores"
-                .to_string(),
-        );
-    }
-
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::add_env_var(&config.path, name, value);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Format: NAME,value
-    let env_args = format!("{},{}", name, value);
-
-    hypr.config_mut()
-        .add_handler_call("env", env_args)
-        .map_err(|e| format!("Failed to add env var: {:?}", e))?;
-
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Windowrule {
+    pub name: String,
+    pub enabled: bool,
+    pub match_properties: Vec<WindowruleProperty>,
+    pub effect_properties: Vec<WindowruleProperty>,
 }
 
-pub fn edit_env_var(index: usize, name: String, value: String) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::edit_env_var(&config.path, index, name, value);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Remove old env var at index
-    hypr.config_mut()
-        .remove_handler_call("env", index)
-        .map_err(|e| format!("Failed to remove env var at index {}: {:?}", index, e))?;
-
-    // Add new env var
-    let env_args = format!("{},{}", name, value);
-    hypr.config_mut()
-        .add_handler_call("env", env_args)
-        .map_err(|e| format!("Failed to add env var: {:?}", e))?;
-
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayerruleProperty {
+    pub key: String,
+    pub value: String,
+    pub property_type: String,
 }
 
-pub fn delete_env_var(index: usize) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::delete_env_var(&config.path, index);
-    }
-    let config_path = config.path;
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Layerrule {
+    pub name: String,
+    pub enabled: bool,
+    pub match_properties: Vec<LayerruleProperty>,
+    pub effect_properties: Vec<LayerruleProperty>,
+}
 
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    hypr.config_mut()
-        .remove_handler_call("env", index)
-        .map_err(|e| format!("Failed to remove env var at index {}: {:?}", index, e))?;
-
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+pub fn get_keybinds() -> Result<Vec<Keybind>, String> {
+    lua::get_keybinds(&lua::config_path()?)
 }
 
 pub fn add_keybind(
@@ -1128,69 +767,7 @@ pub fn add_keybind(
     dispatcher: String,
     params: String,
 ) -> Result<(), String> {
-    // Validate inputs
-    if key.trim().is_empty() {
-        return Err("Key is required".to_string());
-    }
-
-    if dispatcher.trim().is_empty() {
-        return Err("Dispatcher is required".to_string());
-    }
-
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::add_keybind(
-            &config.path,
-            modifiers,
-            key,
-            dispatcher,
-            params,
-        );
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Format bind args: "MODS, KEY, dispatcher, params"
-    let mods_str = if modifiers.is_empty() {
-        String::new()
-    } else {
-        modifiers.join(" ")
-    };
-
-    let bind_args = if mods_str.is_empty() {
-        format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
-    } else {
-        format!(
-            "{}, {}, {}, {}",
-            mods_str,
-            key.trim(),
-            dispatcher.trim(),
-            params.trim()
-        )
-    };
-
-    // Add handler call (mutation API)
-    hypr.config_mut()
-        .add_handler_call("bind", bind_args)
-        .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
-
-    // Save the config file
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+    lua::add_keybind(&lua::config_path()?, modifiers, key, dispatcher, params)
 }
 
 pub fn edit_keybind(
@@ -1200,122 +777,71 @@ pub fn edit_keybind(
     dispatcher: String,
     params: String,
 ) -> Result<(), String> {
-    println!(
-        "edit_keybind called: index={}, key={}, dispatcher={}",
-        index, key, dispatcher
-    );
-
-    // Validate inputs
-    if key.trim().is_empty() {
-        return Err("Key is required".to_string());
-    }
-
-    if dispatcher.trim().is_empty() {
-        return Err("Dispatcher is required".to_string());
-    }
-
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::edit_keybind(
-            &config.path,
-            index,
-            modifiers,
-            key,
-            dispatcher,
-            params,
-        );
-    }
-    let config_path = config.path;
-    println!("Config path: {:?}", config_path);
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    println!("Removing keybind at index {}", index);
-    // Remove old keybind at index
-    hypr.config_mut()
-        .remove_handler_call("bind", index)
-        .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
-    println!("Removed successfully");
-
-    // Format new bind args
-    let mods_str = if modifiers.is_empty() {
-        String::new()
-    } else {
-        modifiers.join(" ")
-    };
-
-    let bind_args = if mods_str.is_empty() {
-        format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
-    } else {
-        format!(
-            "{}, {}, {}, {}",
-            mods_str,
-            key.trim(),
-            dispatcher.trim(),
-            params.trim()
-        )
-    };
-
-    // Add new keybind (mutation API)
-    println!("Adding new keybind: {}", bind_args);
-    hypr.config_mut()
-        .add_handler_call("bind", bind_args)
-        .map_err(|e| format!("Failed to add keybind: {:?}", e))?;
-    println!("Added successfully");
-
-    // Save the config file
-    println!("Saving config files...");
-    let saved_files = hypr
-        .config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-    println!("Saved files: {:?}", saved_files);
-
-    Ok(())
+    lua::edit_keybind(
+        &lua::config_path()?,
+        index,
+        modifiers,
+        key,
+        dispatcher,
+        params,
+    )
 }
 
 pub fn delete_keybind(index: usize) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::delete_keybind(&config.path, index);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    // Remove handler call at index (mutation API)
-    hypr.config_mut()
-        .remove_handler_call("bind", index)
-        .map_err(|e| format!("Failed to remove keybind at index {}: {:?}", index, e))?;
-
-    // Save the config file
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+    lua::delete_keybind(&lua::config_path()?, index)
 }
 
+/// Universal binds: the ones that work in every submap.
+pub fn get_all_bindu() -> Result<Vec<Keybind>, String> {
+    lua::get_all_bindu(&lua::config_path()?)
+}
+
+pub fn add_bindu(
+    modifiers: Vec<String>,
+    key: String,
+    dispatcher: String,
+    params: String,
+) -> Result<(), String> {
+    lua::add_bindu(&lua::config_path()?, modifiers, key, dispatcher, params)
+}
+
+pub fn delete_bindu(index: usize) -> Result<(), String> {
+    lua::delete_bindu(&lua::config_path()?, index)
+}
+
+pub fn get_variables() -> Result<Vec<Variable>, String> {
+    lua::get_variables(&lua::config_path()?)
+}
+
+pub fn set_variable(name: String, value: String) -> Result<(), String> {
+    lua::set_variable(&lua::config_path()?, name, value)
+}
+
+pub fn add_variable(name: String, value: String) -> Result<(), String> {
+    lua::add_variable(&lua::config_path()?, name, value)
+}
+
+pub fn delete_variable(name: String) -> Result<(), String> {
+    lua::delete_variable(&lua::config_path()?, name)
+}
+
+pub fn get_env_vars() -> Result<Vec<EnvVar>, String> {
+    lua::get_env_vars(&lua::config_path()?)
+}
+
+pub fn add_env_var(name: String, value: String) -> Result<(), String> {
+    lua::add_env_var(&lua::config_path()?, name, value)
+}
+
+pub fn edit_env_var(index: usize, name: String, value: String) -> Result<(), String> {
+    lua::edit_env_var(&lua::config_path()?, index, name, value)
+}
+
+pub fn delete_env_var(index: usize) -> Result<(), String> {
+    lua::delete_env_var(&lua::config_path()?, index)
+}
+
+/// Applies a monitor layout to the running session (`hyprctl eval`), without saving it.
 pub fn apply_monitor_settings(
     name: String,
     width: u16,
@@ -1325,38 +851,16 @@ pub fn apply_monitor_settings(
     y: i32,
     scale: f32,
 ) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-
-    // `hyprctl keyword` only works with hyprland.conf (and is gone after Hyprland 0.56);
-    // Lua configs apply monitor rules through `hyprctl eval`.
-    let args = if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        vec![
-            "eval".to_string(),
-            crate::backend::hyprland_lua::monitor_eval_code(
-                &name,
-                &crate::backend::hyprland_lua::MonitorLayout {
-                    width,
-                    height,
-                    refresh_rate,
-                    x,
-                    y,
-                    scale,
-                },
-            ),
-        ]
-    } else {
-        vec![
-            "keyword".to_string(),
-            "monitor".to_string(),
-            format!(
-                "{},{}x{}@{:.2}Hz,{}x{},{}",
-                name, width, height, refresh_rate, x, y, scale
-            ),
-        ]
+    let layout = lua::MonitorLayout {
+        width,
+        height,
+        refresh_rate,
+        x,
+        y,
+        scale,
     };
-
     let output = Command::new("hyprctl")
-        .args(&args)
+        .args(["eval", &lua::monitor_eval_code(&name, &layout)])
         .output()
         .map_err(|e| format!("Failed to run hyprctl: {}", e))?;
 
@@ -1380,618 +884,42 @@ pub fn save_monitor_settings(
     y: i32,
     scale: f32,
 ) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::save_monitor_settings(
-            &config.path,
-            name,
-            &crate::backend::hyprland_lua::MonitorLayout {
-                width,
-                height,
-                refresh_rate,
-                x,
-                y,
-                scale,
-            },
-        );
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    // Parse the config file using hyprlang
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse display config: {:?}", e))?;
-
-    // Format: NAME,WIDTHxHEIGHT@RATEHz,XxY,SCALE
-    let monitor_args = format!(
-        "{},{}x{}@{:.2}Hz,{}x{},{}",
-        name, width, height, refresh_rate, x, y, scale
-    );
-
-    // Get existing monitor handler calls
-    let monitors = hypr
-        .config()
-        .all_handler_calls()
-        .get("monitor")
-        .cloned()
-        .unwrap_or_else(Vec::new);
-
-    // Find and remove the monitor line matching this name (or empty name for fallback)
-    let mut found_index: Option<usize> = None;
-    for (i, monitor_str) in monitors.iter().enumerate() {
-        let parts: Vec<&str> = monitor_str.split(',').collect();
-        if !parts.is_empty() {
-            let existing_name = parts[0].trim();
-            if existing_name == name || (existing_name.is_empty() && name.is_empty()) {
-                found_index = Some(i);
-                break;
-            }
-        }
-    }
-
-    // Remove existing monitor line if found
-    if let Some(index) = found_index {
-        hypr.config_mut()
-            .remove_handler_call("monitor", index)
-            .map_err(|e| format!("Failed to remove existing monitor config: {:?}", e))?;
-    }
-
-    // Add new monitor configuration
-    hypr.config_mut()
-        .add_handler_call("monitor", monitor_args)
-        .map_err(|e| format!("Failed to add monitor config: {:?}", e))?;
-
-    // Save the config file
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+    lua::save_monitor_settings(
+        &lua::config_path()?,
+        name,
+        &lua::MonitorLayout {
+            width,
+            height,
+            refresh_rate,
+            x,
+            y,
+            scale,
+        },
+    )
 }
-
-// ==================== BINDU HANDLERS (Universal Submap Bindings) ====================
-
-pub fn get_all_bindu() -> Result<Vec<Keybind>, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_all_bindu(&config.path);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    let bindus = hypr.all_bindu();
-    let mut keybinds = Vec::new();
-
-    for bind_str in bindus {
-        let parts: Vec<&str> = bind_str.split(',').map(|s| s.trim()).collect();
-
-        if parts.len() >= 3 {
-            let mods_str = parts[0];
-            let key = parts[1].to_string();
-            let dispatcher = parts[2].to_string();
-            let params = if parts.len() > 3 {
-                parts[3..].join(", ")
-            } else {
-                String::new()
-            };
-
-            let modifiers: Vec<String> = mods_str
-                .split(|c: char| c.is_whitespace() || c == '_')
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .collect();
-
-            keybinds.push(Keybind {
-                modifiers,
-                key,
-                dispatcher,
-                params,
-            });
-        }
-    }
-
-    Ok(keybinds)
-}
-
-pub fn add_bindu(
-    modifiers: Vec<String>,
-    key: String,
-    dispatcher: String,
-    params: String,
-) -> Result<(), String> {
-    if key.trim().is_empty() {
-        return Err("Key is required".to_string());
-    }
-
-    if dispatcher.trim().is_empty() {
-        return Err("Dispatcher is required".to_string());
-    }
-
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::add_bindu(
-            &config.path,
-            modifiers,
-            key,
-            dispatcher,
-            params,
-        );
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    let mods_str = if modifiers.is_empty() {
-        String::new()
-    } else {
-        modifiers.join(" ")
-    };
-
-    let bind_args = if mods_str.is_empty() {
-        format!("{}, {}, {}", key.trim(), dispatcher.trim(), params.trim())
-    } else {
-        format!(
-            "{}, {}, {}, {}",
-            mods_str,
-            key.trim(),
-            dispatcher.trim(),
-            params.trim()
-        )
-    };
-
-    hypr.config_mut()
-        .add_handler_call("bindu", bind_args)
-        .map_err(|e| format!("Failed to add bindu: {:?}", e))?;
-
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
-}
-
-pub fn delete_bindu(index: usize) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::delete_bindu(&config.path, index);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    hypr.config_mut()
-        .remove_handler_call("bindu", index)
-        .map_err(|e| format!("Failed to remove bindu at index {}: {:?}", index, e))?;
-
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
-}
-
-// ==================== WINDOWRULE V3 HANDLERS ====================
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct WindowruleProperty {
-    pub key: String,
-    pub value: String,
-    pub property_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Windowrule {
-    pub name: String,
-    pub enabled: bool,
-    pub match_properties: Vec<WindowruleProperty>,
-    pub effect_properties: Vec<WindowruleProperty>,
-}
-
-/// hyprland.conf property names (synced with hyprlang-rs 0.5.0). Lua rules are read
-/// field-by-field instead, see `hyprland_lua_backend`.
-pub const WINDOWRULE_MATCH_PROPERTIES: &[&str] = &[
-    "class",
-    "title",
-    "initial_class",
-    "initial_title",
-    "floating",
-    "tag",
-    "xwayland",
-    "fullscreen",
-    "pinned",
-    "focus",
-    "group",
-    "modal",
-    "fullscreenstate_internal",
-    "fullscreenstate_client",
-    "on_workspace",
-    "content",
-    "xdg_tag",
-    "namespace",
-    "exec_token",
-    // Aliases
-    "float",
-    "pin",
-    "workspace",
-    "fullscreen_state_internal",
-    "fullscreen_state_client",
-];
-
-pub const WINDOWRULE_EFFECT_PROPERTIES: &[&str] = &[
-    "float",
-    "tile",
-    "fullscreen",
-    "maximize",
-    "fullscreenstate",
-    "move",
-    "size",
-    "center",
-    "pseudo",
-    "monitor",
-    "workspace",
-    "noinitialfocus",
-    "pin",
-    "group",
-    "suppressevent",
-    "content",
-    "noclosefor",
-    "rounding",
-    "rounding_power",
-    "persistent_size",
-    "animation",
-    "border_color",
-    "bordercolor",
-    "idle_inhibit",
-    "idleinhibit",
-    "opacity",
-    "tag",
-    "max_size",
-    "maxsize",
-    "min_size",
-    "minsize",
-    "border_size",
-    "bordersize",
-    "allows_input",
-    "dim_around",
-    "decorate",
-    "focus_on_activate",
-    "keep_aspect_ratio",
-    "keepaspectratio",
-    "nearest_neighbor",
-    "nearestneighbor",
-    "no_anim",
-    "noanim",
-    "no_blur",
-    "noblur",
-    "no_dim",
-    "nodim",
-    "no_focus",
-    "nofocus",
-    "no_follow_mouse",
-    "nofollowmouse",
-    "no_max_size",
-    "nomaxsize",
-    "no_shadow",
-    "noshadow",
-    "no_shortcuts_inhibit",
-    "noshortcutsinhibit",
-    "opaque",
-    "force_rgbx",
-    "forcergbx",
-    "sync_fullscreen",
-    "syncfullscreen",
-    "immediate",
-    "xray",
-    "render_unfocused",
-    "renderunfocused",
-    "no_screen_share",
-    "noscreenshare",
-    "no_vrr",
-    "novrr",
-    "scroll_mouse",
-    "scrollmouse",
-    "scroll_touchpad",
-    "scrolltouchpad",
-    "stay_focused",
-    "stayfocused",
-    // Aliases
-    "fullscreen_state",
-    "no_initial_focus",
-    "suppress_event",
-    "no_close_for",
-];
 
 pub fn get_windowrule_names() -> Result<Vec<String>, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_windowrule_names(&config.path);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    Ok(hypr.windowrule_names())
+    lua::get_windowrule_names(&lua::config_path()?)
 }
 
 pub fn get_windowrule(name: String) -> Result<Windowrule, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_windowrule(&config.path, name);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    let rule = hypr
-        .get_windowrule(&name)
-        .map_err(|e| format!("Windowrule '{}' not found: {:?}", name, e))?;
-
-    let enabled = rule.get_int("enable").unwrap_or(1) != 0;
-
-    let mut match_properties = Vec::new();
-    let mut effect_properties = Vec::new();
-
-    // Collect match properties
-    for prop in WINDOWRULE_MATCH_PROPERTIES {
-        if let Ok(value) = rule.get_string(&format!("match:{}", prop))
-            && !value.is_empty()
-        {
-            match_properties.push(WindowruleProperty {
-                key: prop.to_string(),
-                value,
-                property_type: "match".to_string(),
-            });
-        }
-    }
-
-    // Collect effect properties
-    for prop in WINDOWRULE_EFFECT_PROPERTIES {
-        if let Ok(value) = rule.get_string(prop)
-            && !value.is_empty()
-        {
-            effect_properties.push(WindowruleProperty {
-                key: prop.to_string(),
-                value,
-                property_type: "effect".to_string(),
-            });
-        }
-    }
-
-    Ok(Windowrule {
-        name,
-        enabled,
-        match_properties,
-        effect_properties,
-    })
+    lua::get_windowrule(&lua::config_path()?, name)
 }
 
 pub fn delete_windowrule(name: String) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::delete_windowrule(&config.path, name);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    hypr.config_mut()
-        .remove_special_category_instance("windowrule", &name)
-        .map_err(|e| format!("Failed to delete windowrule '{}': {:?}", name, e))?;
-
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+    lua::delete_windowrule(&lua::config_path()?, name)
 }
-
-// ==================== LAYERRULE V2 HANDLERS ====================
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LayerruleProperty {
-    pub key: String,
-    pub value: String,
-    pub property_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Layerrule {
-    pub name: String,
-    pub enabled: bool,
-    pub match_properties: Vec<LayerruleProperty>,
-    pub effect_properties: Vec<LayerruleProperty>,
-}
-
-/// hyprland.conf property names (synced with hyprlang-rs 0.5.0).
-pub const LAYERRULE_MATCH_PROPERTIES: &[&str] =
-    &["namespace", "address", "class", "title", "monitor", "layer"];
-
-pub const LAYERRULE_EFFECT_PROPERTIES: &[&str] = &[
-    "blur",
-    "blur_popups",
-    "ignorealpha",
-    "ignore_alpha",
-    "ignorezero",
-    "animation",
-    "noanim",
-    "no_anim",
-    "xray",
-    "dim_around",
-    "order",
-    "above_lock",
-    "no_screen_share",
-    "noscreenshare",
-];
 
 pub fn get_layerrule_names() -> Result<Vec<String>, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_layerrule_names(&config.path);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    Ok(hypr.layerrule_names())
+    lua::get_layerrule_names(&lua::config_path()?)
 }
 
 pub fn get_layerrule(name: String) -> Result<Layerrule, String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::get_layerrule(&config.path, name);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    let rule = hypr
-        .get_layerrule(&name)
-        .map_err(|e| format!("Layerrule '{}' not found: {:?}", name, e))?;
-
-    let enabled = rule.get_int("enable").unwrap_or(1) != 0;
-
-    let mut match_properties = Vec::new();
-    let mut effect_properties = Vec::new();
-
-    for prop in LAYERRULE_MATCH_PROPERTIES {
-        if let Ok(value) = rule.get_string(&format!("match:{}", prop))
-            && !value.is_empty()
-        {
-            match_properties.push(LayerruleProperty {
-                key: prop.to_string(),
-                value,
-                property_type: "match".to_string(),
-            });
-        }
-    }
-
-    for prop in LAYERRULE_EFFECT_PROPERTIES {
-        if let Ok(value) = rule.get_string(prop)
-            && !value.is_empty()
-        {
-            effect_properties.push(LayerruleProperty {
-                key: prop.to_string(),
-                value,
-                property_type: "effect".to_string(),
-            });
-        }
-    }
-
-    Ok(Layerrule {
-        name,
-        enabled,
-        match_properties,
-        effect_properties,
-    })
+    lua::get_layerrule(&lua::config_path()?, name)
 }
 
 pub fn delete_layerrule(name: String) -> Result<(), String> {
-    let config = crate::backend::hyprland_lua::get_preferred_config()?;
-    if config.format == crate::backend::hyprland_lua::HyprlandConfigFormat::Lua {
-        return crate::backend::hyprland_lua::delete_layerrule(&config.path, name);
-    }
-    let config_path = config.path;
-
-    if !config_path.exists() {
-        return Err(format!(
-            "Hyprland config file not found at {:?}",
-            config_path
-        ));
-    }
-
-    let mut hypr = Hyprland::new();
-    hypr.parse_file(&config_path)
-        .map_err(|e| format!("Failed to parse Hyprland config: {:?}", e))?;
-
-    hypr.config_mut()
-        .remove_special_category_instance("layerrule", &name)
-        .map_err(|e| format!("Failed to delete layerrule '{}': {:?}", name, e))?;
-
-    hypr.config_mut()
-        .save_all()
-        .map_err(|e| format!("Failed to save config files: {:?}", e))?;
-
-    Ok(())
+    lua::delete_layerrule(&lua::config_path()?, name)
 }
 
 #[cfg(test)]

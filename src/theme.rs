@@ -55,6 +55,43 @@ impl Palettes {
     }
 }
 
+/// Both appearances' kits, built when the colours change rather than on every view.
+pub struct Kits {
+    /// The seeds the kits were built from.
+    palettes: Palettes,
+    kits: [Kit; 2],
+}
+
+impl Kits {
+    pub fn new(palettes: &Palettes) -> Kits {
+        Kits {
+            palettes: *palettes,
+            kits: [palettes.kit(false), palettes.kit(true)],
+        }
+    }
+
+    pub fn get(&self, dark: bool) -> &Kit {
+        &self.kits[usize::from(dark)]
+    }
+
+    /// Recolours from a theme file's CSS; false (and no rebuild) when its seeds are the ones
+    /// in use, so reporting the same colours twice costs nothing.
+    pub fn update(&mut self, css: &str) -> bool {
+        let palettes = Palettes::parse(css);
+        if palettes == self.palettes {
+            return false;
+        }
+        *self = Kits::new(&palettes);
+        true
+    }
+}
+
+impl Default for Kits {
+    fn default() -> Self {
+        Kits::new(&Palettes::default())
+    }
+}
+
 fn seed(vars: &str) -> Option<Seed> {
     Some(Seed {
         bg: var(vars, "--background")?,
@@ -182,6 +219,19 @@ mod tests {
         // hsl(215 90% 73%) is #7cb0f8 in a browser.
         assert_eq!(color("hsl(215 90% 73%)"), rune::color::hex("#7cb0f8"));
         assert_eq!(color("hsl(0, 0%, 100%)"), rune::color::hex("#ffffff"));
+    }
+
+    #[test]
+    fn kits_rebuild_only_when_the_colours_change() {
+        let mut kits = Kits::default();
+        assert!(kits.update(CSS), "new colours");
+        assert!(!kits.update(CSS), "the same colours again");
+        assert!(
+            !kits.update(&format!("/* reformatted */\n{CSS}")),
+            "the same seeds, written differently"
+        );
+        assert!(kits.update("not css"), "back to the neutral theme");
+        assert!(!kits.update(""), "still the neutral theme");
     }
 
     #[test]

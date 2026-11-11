@@ -29,10 +29,27 @@ type Landing = Box<dyn FnOnce(&mut State, &mut Tx) + Send>;
 /// work (it couldn't be started) and lands that error. Either way it lands exactly once.
 type Task = Box<dyn FnOnce(Option<String>) + Send>;
 
-pub struct Jobs {
+/// Where finished work goes: the UI thread's inbox, and the waker that gets it to look.
+#[derive(Clone)]
+struct Outbox {
     send: Sender<Landing>,
-    inbox: Receiver<Landing>,
     waker: Option<Waker>,
+}
+
+impl Outbox {
+    /// Hands `landing` to the UI thread and wakes it; false once the app is gone.
+    fn deliver(&self, landing: Landing) -> bool {
+        let delivered = self.send.send(landing).is_ok();
+        if delivered && let Some(w) = &self.waker {
+            w();
+        }
+        delivered
+    }
+}
+
+pub struct Jobs {
+    outbox: Outbox,
+    inbox: Receiver<Landing>,
     live: bool,
     /// The write lane, started with the first write.
     writer: Option<Sender<Task>>,
@@ -44,9 +61,8 @@ impl Jobs {
     pub fn new() -> Jobs {
         let (send, inbox) = channel();
         Jobs {
-            send,
+            outbox: Outbox { send, waker: None },
             inbox,
-            waker: None,
             live: false,
             writer: None,
             skipped: Vec::new(),
@@ -54,11 +70,19 @@ impl Jobs {
     }
 
     pub fn set_waker(&mut self, waker: Waker) {
-        self.waker = Some(waker);
+        self.outbox.waker = Some(waker);
     }
 
     pub fn go_live(&mut self) {
         self.live = true;
+    }
+
+    /// True (and the job recorded) when jobs don't run yet.
+    fn skip(&mut self, name: &'static str) -> bool {
+        if !self.live {
+            self.skipped.push(name);
+        }
+        !self.live
     }
 
     /// Reads: runs `work` on its own worker thread, then `land` with its answer on the UI
@@ -69,8 +93,7 @@ impl Jobs {
         work: impl FnOnce() -> Result<T, String> + Send + 'static,
         land: impl FnOnce(&mut State, Result<T, String>, &mut Tx) + Send + 'static,
     ) {
-        if !self.live {
-            self.skipped.push(name);
+        if self.skip(name) {
             return;
         }
         let task = self.task(name, work, land);
@@ -101,23 +124,22 @@ impl Jobs {
         work: impl FnOnce() -> Result<T, String> + Send + 'static,
         land: impl FnOnce(&mut State, Result<T, String>, &mut Tx) + Send + 'static,
     ) {
-        if !self.live {
-            self.skipped.push(name);
+        if self.skip(name) {
             return;
         }
         let task = self.task(name, work, land);
-        let refused = match self.writer() {
-            Ok(writer) => writer.send(task).err().map(|e| e.0),
-            Err(e) => {
-                task(Some(format!("Couldn't start {name}: {e}")));
-                return;
-            }
+        let (task, why) = match self.writer() {
+            Ok(writer) => match writer.send(task) {
+                Ok(()) => return,
+                Err(refused) => {
+                    // The writer is gone (it never panics, so this is shutdown); don't queue again.
+                    self.writer = None;
+                    (refused.0, "the writer stopped".to_owned())
+                }
+            },
+            Err(e) => (task, e.to_string()),
         };
-        if let Some(task) = refused {
-            // The writer is gone (it never panics, so this is shutdown); don't queue again.
-            self.writer = None;
-            task(Some(format!("Couldn't start {name}: the writer stopped")));
-        }
+        task(Some(format!("Couldn't start {name}: {why}")));
     }
 
     /// A source that keeps producing (a socket, a watcher) on a thread of its own: `source`
@@ -129,24 +151,18 @@ impl Jobs {
         source: impl FnOnce(&mut dyn FnMut(T) -> bool) + Send + 'static,
         land: impl Fn(&mut State, T, &mut Tx) + Send + Clone + 'static,
     ) {
-        if !self.live {
-            self.skipped.push(name);
+        if self.skip(name) {
             return;
         }
-        let send = self.send.clone();
-        let waker = self.waker.clone();
+        let outbox = self.outbox.clone();
         let spawned = std::thread::Builder::new()
             .name(format!("stream-{name}"))
             .spawn(move || {
                 let mut emit = |value: T| {
                     let land = land.clone();
-                    let landing: Landing =
-                        Box::new(move |s: &mut State, tx: &mut Tx| land(s, value, tx));
-                    let delivered = send.send(landing).is_ok();
-                    if delivered && let Some(w) = &waker {
-                        w();
-                    }
-                    delivered
+                    outbox.deliver(Box::new(move |s: &mut State, tx: &mut Tx| {
+                        land(s, value, tx)
+                    }))
                 };
                 source(&mut emit);
             });
@@ -202,19 +218,13 @@ impl Jobs {
         work: impl FnOnce() -> Result<T, String> + Send + 'static,
         land: impl FnOnce(&mut State, Result<T, String>, &mut Tx) + Send + 'static,
     ) -> Task {
-        let send = self.send.clone();
-        let waker = self.waker.clone();
+        let outbox = self.outbox.clone();
         Box::new(move |refused: Option<String>| {
             let out = match refused {
                 Some(e) => Err(e),
                 None => guarded(name, work),
             };
-            let landing: Landing = Box::new(move |s: &mut State, tx: &mut Tx| land(s, out, tx));
-            if send.send(landing).is_ok()
-                && let Some(w) = waker
-            {
-                w();
-            }
+            outbox.deliver(Box::new(move |s: &mut State, tx: &mut Tx| land(s, out, tx)));
         })
     }
 
@@ -227,6 +237,33 @@ impl Jobs {
         }
         landed
     }
+}
+
+/// Loads the `Remote` that `pick` points at with `work`, on a read worker; the answer lands
+/// there unless a newer load superseded it.
+pub fn load<T: Send + 'static>(
+    s: &mut State,
+    name: &'static str,
+    pick: fn(&mut State) -> &mut Remote<T>,
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) {
+    load_then(s, name, pick, work, |_| {});
+}
+
+/// `load`, then `then` once the answer was taken.
+pub fn load_then<T: Send + 'static>(
+    s: &mut State,
+    name: &'static str,
+    pick: fn(&mut State) -> &mut Remote<T>,
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+    then: impl FnOnce(&mut State) + Send + 'static,
+) {
+    let attempt = pick(s).begin();
+    s.jobs.run(name, work, move |s, r, _| {
+        if pick(s).land(attempt, r) {
+            then(s);
+        }
+    });
 }
 
 /// Debounces a watched value: a change counts once it has held for one more check, so a
@@ -262,14 +299,11 @@ fn guarded<T>(name: &str, work: impl FnOnce() -> Result<T, String>) -> Result<T,
         .unwrap_or_else(|p| Err(format!("{name} crashed: {}", panic_message(p.as_ref()))))
 }
 
-fn panic_message(p: &(dyn Any + Send)) -> String {
-    if let Some(s) = p.downcast_ref::<&str>() {
-        (*s).to_owned()
-    } else if let Some(s) = p.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "unknown panic".to_owned()
-    }
+fn panic_message(p: &(dyn Any + Send)) -> &str {
+    p.downcast_ref::<&str>()
+        .copied()
+        .or_else(|| p.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic")
 }
 
 /// Attempt numbers are unique across every `Remote`, so an answer to a request made before a
@@ -279,9 +313,8 @@ fn next_attempt() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Hold {
-    #[default]
     None,
     /// A write to what the data describes is in flight.
     Writing,
@@ -357,20 +390,16 @@ impl<T> Remote<T> {
         self.data.is_none() && (self.loading || self.error.is_none())
     }
 
-    /// A write is changing what this data describes. Until `release`, or the reload after
-    /// `written` lands, rows mustn't be acted on by their position.
+    /// A write is changing what this data describes. Until `after_write(false)`, or the
+    /// reload after `after_write(true)` lands, rows mustn't be acted on by their position.
     pub fn hold(&mut self) {
         self.hold = Hold::Writing;
     }
 
-    /// The write failed, so the data still describes the file.
-    pub fn release(&mut self) {
-        self.hold = Hold::None;
-    }
-
-    /// The write succeeded: settled once the next accepted answer lands. Reload right after.
-    pub fn written(&mut self) {
-        self.hold = Hold::Reloading;
+    /// The held write landed. If it succeeded, the data is stale until the next accepted
+    /// answer (reload right after); if it failed, the data still describes the file.
+    pub fn after_write(&mut self, ok: bool) {
+        self.hold = if ok { Hold::Reloading } else { Hold::None };
     }
 
     /// Whether a write or its reload is outstanding.
@@ -451,14 +480,14 @@ mod tests {
         // A reload that started before the write doesn't settle it.
         assert!(r.land(before, Ok(vec![1, 2, 3])));
         assert!(r.settling());
-        r.written();
+        r.after_write(true);
         let after = r.begin();
         assert!(r.settling());
         assert!(r.land(after, Ok(vec![1, 3])));
         assert!(!r.settling());
 
         r.hold();
-        r.release();
+        r.after_write(false);
         assert!(!r.settling());
     }
 

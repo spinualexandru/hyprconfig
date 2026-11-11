@@ -243,7 +243,7 @@ fn to_css(by: Generator, dark: &Scheme, light: &Scheme) -> String {
 }
 
 fn installed(tool: &str) -> Result<(), String> {
-    if os::tool_exists(tool.into()).unwrap_or(false) {
+    if os::tool_exists(tool) {
         Ok(())
     } else {
         Err("not installed".into())
@@ -396,13 +396,11 @@ fn parse_scheme(reply: &str) -> Option<(String, String)> {
 }
 
 fn noctalia() -> Result<String, String> {
-    noctalia_running()?;
+    let reply = noctalia_running()?;
     // With the integration on, Noctalia renders whatever palette it shows.
     if let Some(css) = noctalia_rendered() {
         return Ok(css);
     }
-    let reply = hyprpaper::noctalia_msg(&["color-scheme-get"])
-        .map_err(|e| format!("isn't answering ({e})"))?;
     let (source, name) =
         parse_scheme(&reply).ok_or_else(|| format!("unexpected colour scheme \"{reply}\""))?;
     match source.as_str() {
@@ -616,11 +614,10 @@ fn rewire(list: Vec<String>, ours: Option<String>) -> Vec<String> {
     out
 }
 
-fn noctalia_running() -> Result<(), String> {
+/// Whether Noctalia is installed and answering: its `color-scheme-get` reply, or why not.
+fn noctalia_running() -> Result<String, String> {
     installed("noctalia")?;
-    hyprpaper::noctalia_msg(&["color-scheme-get"])
-        .map(|_| ())
-        .map_err(|e| format!("isn't answering ({e})"))
+    hyprpaper::noctalia_msg(&["color-scheme-get"]).map_err(|e| format!("isn't answering ({e})"))
 }
 
 fn hook_list(key: &str) -> Result<Vec<String>, String> {
@@ -726,6 +723,7 @@ pub fn noctalia_dark() -> Result<Option<bool>, String> {
     if noctalia_running().is_err() {
         return Ok(None);
     }
+    // Noctalia is running, so a refusal here is worth reporting.
     match hyprpaper::noctalia_msg(&["theme-mode-get"])?.trim() {
         "dark" => Ok(Some(true)),
         "light" => Ok(Some(false)),

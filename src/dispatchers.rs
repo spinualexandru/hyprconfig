@@ -138,13 +138,14 @@ pub const DISPATCHERS: &[(&str, &str)] = &[
     ("releaseinputcapture", "Release an active input capture"),
     ("event", "Emit a custom event on the event socket"),
     ("global", "Global shortcut (works when not focused)"),
+    (
+        RAW_LUA,
+        "Raw Lua dispatcher, e.g. hl.dsp.window.close() or function() ... end",
+    ),
 ];
 
-/// Only meaningful for `hyprland.lua` configs.
-pub const LUA_ONLY: &[(&str, &str)] = &[(
-    "lua",
-    "Raw Lua dispatcher, e.g. hl.dsp.window.close() or function() ... end",
-)];
+/// The dispatcher whose params are written to the config as Lua, verbatim.
+pub const RAW_LUA: &str = "lua";
 
 /// The modifiers the keybind form has a checkbox for.
 pub const MODIFIERS: [&str; 4] = ["SUPER", "SHIFT", "ALT", "CTRL"];
@@ -205,20 +206,19 @@ pub fn description(dispatcher: &str) -> &'static str {
     let d = dispatcher.to_lowercase();
     DISPATCHERS
         .iter()
-        .chain(LUA_ONLY)
         .find(|(n, _)| *n == d)
         .map_or("Custom dispatcher command", |(_, desc)| desc)
 }
 
 /// Up to eight dispatchers containing `typed`, case-insensitively; none for an empty field or
 /// an exact match.
-pub fn suggestions(typed: &str, lua: bool) -> Vec<&'static str> {
+pub fn suggestions(typed: &str) -> Vec<&'static str> {
     let q = typed.trim().to_lowercase();
     if q.is_empty() {
         return Vec::new();
     }
-    let all = DISPATCHERS.iter().chain(if lua { LUA_ONLY } else { &[] });
-    let hits: Vec<&'static str> = all
+    let hits: Vec<&'static str> = DISPATCHERS
+        .iter()
         .map(|(n, _)| *n)
         .filter(|n| n.contains(&q))
         .take(8)
@@ -236,9 +236,14 @@ pub struct Part {
     pub variable: bool,
 }
 
+/// Whether `c` can be part of a variable name.
+pub fn is_name_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
 /// Splits a command into plain text and `$name` / `${name}` variable references.
 pub fn parse_command(command: &str) -> Vec<Part> {
-    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let word = is_name_char;
     let mut parts = Vec::new();
     let mut plain = String::new();
     let mut rest = command;
@@ -275,6 +280,43 @@ pub fn parse_command(command: &str) -> Vec<Part> {
         });
     }
     parts
+}
+
+/// Splits a command like `parse_command`, keeping only references to names `known` answers
+/// for as variables. `${name}` must name one whole; an unbraced `$name` takes the longest known
+/// prefix, so with `terminal` known, `$terminalx` is `$terminal` followed by `x`.
+pub fn resolve_command(command: &str, known: impl Fn(&str) -> bool) -> Vec<Part> {
+    let mut out: Vec<Part> = Vec::new();
+    let mut push = |text: &str, variable: bool| match out.last_mut() {
+        Some(last) if !variable && !last.variable => last.text.push_str(text),
+        _ if !text.is_empty() => out.push(Part {
+            text: text.to_owned(),
+            variable,
+        }),
+        _ => {}
+    };
+    for part in parse_command(command) {
+        if !part.variable {
+            push(&part.text, false);
+            continue;
+        }
+        let name = variable_name(&part.text);
+        let braced = part.text.starts_with("${");
+        let prefix = if braced {
+            known(name).then_some(name.len())
+        } else {
+            (1..=name.len()).rev().find(|&n| known(&name[..n]))
+        };
+        match prefix {
+            Some(_) if braced => push(&part.text, true),
+            Some(n) => {
+                push(&part.text[..1 + n], true);
+                push(&name[n..], false);
+            }
+            None => push(&part.text, false),
+        }
+    }
+    out
 }
 
 /// `$name` or `${name}` to `name`.
@@ -321,13 +363,31 @@ mod tests {
     }
 
     #[test]
+    fn resolves_only_known_variables() {
+        let known = |n: &str| matches!(n, "terminal" | "menu");
+        assert_eq!(
+            resolve_command("$terminalx --hold $HOME ${menu}!", known),
+            vec![
+                p("$terminal", true),
+                p("x --hold $HOME ", false),
+                p("${menu}", true),
+                p("!", false),
+            ]
+        );
+        assert_eq!(
+            resolve_command("${terminalx}", known),
+            vec![p("${terminalx}", false)]
+        );
+    }
+
+    #[test]
     fn suggestions_filter_and_cap() {
-        assert!(suggestions("", false).is_empty());
-        assert_eq!(suggestions("exec", false), vec!["exec", "execr"]);
-        assert!(suggestions("lua", false).is_empty());
-        assert!(suggestions("lu", true).contains(&"lua"));
-        assert!(suggestions("move", false).len() <= 8);
-        assert!(suggestions("forcekillactive", false).is_empty());
+        assert!(suggestions("").is_empty());
+        assert_eq!(suggestions("exec"), vec!["exec", "execr"]);
+        assert!(suggestions("lua").is_empty());
+        assert!(suggestions("lu").contains(&"lua"));
+        assert!(suggestions("move").len() <= 8);
+        assert!(suggestions("forcekillactive").is_empty());
     }
 
     fn written(mods: &[&str], vars: &[(&str, &str)]) -> Vec<(String, String)> {

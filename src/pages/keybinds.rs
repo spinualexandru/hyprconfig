@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rune::{El, TextEdit, col, row, text};
 use rune_kit::{
     Button, ButtonVariant, Checkbox, Dialog, IconButton, IconButtonVariant, Kit, SegmentedControl,
@@ -8,7 +10,7 @@ use crate::app::{self, State};
 use crate::backend::hyprland::{self as hypr, Keybind, Variable};
 use crate::dispatchers;
 use crate::icons;
-use crate::jobs::Remote;
+use crate::jobs::{self, Remote};
 use crate::ui::{self, Card, Tone};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -49,7 +51,6 @@ pub struct KeybindsState {
 }
 
 pub fn load(s: &mut State) {
-    app::load_config_info(s);
     load_binds(s);
     load_universal(s);
     s.jobs.run("variables", hypr::get_variables, |s, r, _| {
@@ -90,17 +91,16 @@ pub fn check_bind(
 }
 
 fn load_binds(s: &mut State) {
-    let attempt = s.keybinds.binds.begin();
-    s.jobs.run("keybinds", hypr::get_keybinds, move |s, r, _| {
-        s.keybinds.binds.land(attempt, r);
-    });
+    jobs::load(s, "keybinds", |s| &mut s.keybinds.binds, hypr::get_keybinds);
 }
 
 fn load_universal(s: &mut State) {
-    let attempt = s.keybinds.universal.begin();
-    s.jobs.run("bindu", hypr::get_all_bindu, move |s, r, _| {
-        s.keybinds.universal.land(attempt, r);
-    });
+    jobs::load(
+        s,
+        "bindu",
+        |s| &mut s.keybinds.universal,
+        hypr::get_all_bindu,
+    );
 }
 
 pub fn open_form(s: &mut State, mode: FormMode) {
@@ -210,16 +210,13 @@ pub fn submit(s: &mut State) {
         },
         move |s, r, _| {
             s.keybinds.form_busy = false;
+            remote(s, tab).after_write(r.is_ok());
             match r {
                 Ok(()) => {
                     s.keybinds.form = None;
-                    remote(s, tab).written();
                     reload(s, tab);
                 }
-                Err(e) => {
-                    remote(s, tab).release();
-                    s.keybinds.form_error = Some(e);
-                }
+                Err(e) => s.keybinds.form_error = Some(e),
             }
         },
     );
@@ -247,14 +244,11 @@ pub fn delete(s: &mut State, tab: Tab, index: usize) {
                 hypr::delete_bindu(index)
             }
         },
-        move |s, r, tx| match r {
-            Ok(()) => {
-                remote(s, tab).written();
-                reload(s, tab);
-            }
-            Err(e) => {
-                remote(s, tab).release();
-                app::fail(s, tx, "Failed to delete the keybind", e);
+        move |s, r, tx| {
+            remote(s, tab).after_write(r.is_ok());
+            match r {
+                Ok(()) => reload(s, tab),
+                Err(e) => app::fail(s, tx, "Failed to delete the keybind", e),
             }
         },
     );
@@ -269,8 +263,17 @@ fn modifier_tone(m: &str) -> Tone {
     }
 }
 
-fn command(k: &Kit, params: &str, vars: &[Variable]) -> El {
-    let parts = dispatchers::parse_command(params);
+/// The config's variables by name, for `command`.
+type VarValues<'a> = HashMap<&'a str, &'a str>;
+
+fn var_values(vars: &[Variable]) -> VarValues<'_> {
+    vars.iter()
+        .map(|v| (v.name.as_str(), v.value.as_str()))
+        .collect()
+}
+
+fn command(k: &Kit, params: &str, vars: &VarValues) -> El {
+    let parts = dispatchers::resolve_command(params, |name| vars.contains_key(name));
     if !parts.iter().any(|p| p.variable) {
         let shown = if params.is_empty() {
             "—".to_owned()
@@ -293,17 +296,14 @@ fn command(k: &Kit, params: &str, vars: &[Variable]) -> El {
         .children(parts.into_iter().enumerate().map(|(i, p)| {
             let value = p
                 .variable
-                .then(|| {
-                    vars.iter()
-                        .find(|v| v.name == dispatchers::variable_name(&p.text))
-                })
+                .then(|| vars.get(dispatchers::variable_name(&p.text)))
                 .flatten();
             let t = text(p.text).key(format!("p{i}")).font(k.ty.body);
             match value {
-                Some(v) => t
+                Some(&v) => t
                     .font(k.ty.body_medium)
                     .color(k.c.text_accent)
-                    .help(v.value.clone()),
+                    .help(v.to_owned()),
                 None => t.color(k.c.text_muted),
             }
         }))
@@ -311,7 +311,7 @@ fn command(k: &Kit, params: &str, vars: &[Variable]) -> El {
 
 const WIDTHS: [Option<f32>; 5] = [Some(170.0), Some(110.0), Some(170.0), None, Some(76.0)];
 
-fn bind_row(s: &State, k: &Kit, tab: Tab, i: usize, b: &Keybind, settling: bool) -> El {
+fn bind_row(k: &Kit, tab: Tab, i: usize, b: &Keybind, vars: &VarValues, settling: bool) -> El {
     let mods = if b.modifiers.is_empty() {
         text("None").font(k.ty.body).color(k.c.text_muted)
     } else {
@@ -352,7 +352,7 @@ fn bind_row(s: &State, k: &Kit, tab: Tab, i: usize, b: &Keybind, settling: bool)
             mods,
             ui::keycap(k, &b.key),
             ui::code(k, b.dispatcher.clone()).help(dispatchers::description(&b.dispatcher)),
-            command(k, &b.params, &s.keybinds.variables),
+            command(k, &b.params, vars),
             actions,
         ],
     )
@@ -376,6 +376,7 @@ fn bind_table(s: &State, k: &Kit, tab: Tab) -> Option<El> {
         ),
     };
     let settling = r.settling();
+    let vars = var_values(&s.keybinds.variables);
     Some(match r.data.as_deref() {
         None if r.first_load() => Card::new()
             .icon(icon)
@@ -408,7 +409,7 @@ fn bind_table(s: &State, k: &Kit, tab: Tab) -> Option<El> {
                 binds
                     .iter()
                     .enumerate()
-                    .map(|(i, b)| bind_row(s, k, tab, i, b, settling))
+                    .map(|(i, b)| bind_row(k, tab, i, b, &vars, settling))
                     .collect(),
             ))
             .build(k)
@@ -447,7 +448,6 @@ fn labelled(k: &Kit, key: &str, label: &str, control: El, hint: Option<String>) 
 fn form_dialog(s: &State, k: &Kit, layers: &mut Vec<El>) {
     let kb = &s.keybinds;
     let Some(mode) = kb.form else { return };
-    let lua = s.is_lua();
     let busy = kb.form_busy;
     let (title, description, submit_label) = match mode {
         FormMode::AddUniversal => (
@@ -527,7 +527,7 @@ fn form_dialog(s: &State, k: &Kit, layers: &mut Vec<El>) {
         .on_submit(|s: &mut State, _| submit(s))
         .build(k)
         .key("input");
-    let picks = dispatchers::suggestions(&kb.dispatcher.text, lua);
+    let picks = dispatchers::suggestions(&kb.dispatcher.text);
     let mut dispatcher = col().w_full().gap(6.0).child(dispatcher_input);
     if !picks.is_empty() && !busy {
         dispatcher = dispatcher.child(
@@ -551,14 +551,10 @@ fn form_dialog(s: &State, k: &Kit, layers: &mut Vec<El>) {
                 })),
         );
     }
-    let common = "Common: exec, killactive, workspace, togglefloating, fullscreen";
-    let dispatcher_hint = if lua {
-        format!("{common}. Use lua for any other hl.dsp.* call")
-    } else {
-        common.to_owned()
-    };
+    let dispatcher_hint = "Common: exec, killactive, workspace, togglefloating, fullscreen. \
+                           Use lua for any other hl.dsp.* call";
 
-    let lua_dispatcher = kb.dispatcher.text.trim() == "lua";
+    let lua_dispatcher = kb.dispatcher.text.trim() == dispatchers::RAW_LUA;
     let params_input = TextInput::new(&kb.params)
         .label("Parameters")
         .width(None)
@@ -575,10 +571,8 @@ fn form_dialog(s: &State, k: &Kit, layers: &mut Vec<El>) {
         .key("input");
     let params_hint = if lua_dispatcher {
         "Written to the config as-is: an hl.dsp.* call or a function"
-    } else if lua {
-        "Command arguments. Can use variables like $terminal or ${terminal}"
     } else {
-        "Command arguments. Can use variables like $terminal"
+        "Command arguments. Can use variables like $terminal or ${terminal}"
     };
 
     let mut fields = col()
@@ -604,7 +598,7 @@ fn form_dialog(s: &State, k: &Kit, layers: &mut Vec<El>) {
             "dispatcher",
             "Dispatcher (Action) *",
             dispatcher,
-            Some(dispatcher_hint),
+            Some(dispatcher_hint.into()),
         ))
         .child(labelled(
             k,
