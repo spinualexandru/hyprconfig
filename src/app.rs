@@ -4,9 +4,9 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use rune::prefs::Prefs;
-use rune::{AppSpec, Cx, El, ImageCache, KeyEvent, Tx, Waker, col, row, text};
-use rune_kit::Kit;
+use rune::{AppSpec, Cx, El, ImageCache, KeyEvent, Tx, Waker, col, el, row, text};
 use rune_kit::shell::{self, PaneState, Sidebar, SidebarRow, SplitView};
+use rune_kit::{IconButton, IconButtonVariant, Kit};
 
 use crate::backend::palette;
 use crate::ipc;
@@ -17,6 +17,11 @@ use crate::ui::Toasts;
 use crate::{backend, fixtures, icons};
 
 pub const APP_ID: &str = "hyprconfig";
+/// The window background around the main pane.
+const FRAME: f32 = 8.0;
+/// How much of the shell's title bar band to cut, keeping a frame-wide strip.
+const TITLEBAR_TRIM: f32 = shell::TOOLBAR_HEIGHT - FRAME;
+
 /// The pref holding the light or dark choice made in the sidebar.
 const DARK_PREF: &str = "dark";
 
@@ -249,24 +254,63 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
                 .key(p.id()),
         );
     }
-    let (label, icon, help) = if dark {
-        ("Dark Mode", &icons::MOON, "Switch to light mode")
+    let (icon, help) = if dark {
+        (&icons::MOON, "Switch to light mode")
     } else {
-        ("Light Mode", &icons::SUN, "Switch to dark mode")
+        (&icons::SUN, "Switch to dark mode")
     };
-    let theme_row = SidebarRow::new(label)
-        .icon(icon)
-        .on_select(move |s: &mut State, _| set_dark(s, Some(!dark)))
+    let theme = IconButton::new(icon)
+        .variant(IconButtonVariant::GhostMuted)
+        .label(help)
+        .help(help)
+        .on_press(move |s: &mut State| set_dark(s, Some(!dark)))
         .build(k)
-        .key("theme")
-        .help(help);
-    let sidebar = sidebar.footer(theme_row).build(k);
+        .key("theme");
+    let collapse = IconButton::new(&shell::SIDEBAR)
+        .variant(IconButtonVariant::GhostMuted)
+        .label("Hide sidebar")
+        .help("Hide sidebar")
+        .on_press(|s: &mut State| s.sidebar.set_open(false))
+        .build(k)
+        .key("collapse");
+    let footer = row()
+        .key("footer")
+        .w_full()
+        .gap(4.0)
+        .center_y()
+        .child(theme)
+        .child(collapse);
+    let sidebar = sidebar.footer(footer).build(k);
 
     let shell = SplitView::new(main)
         .sidebar(&s.sidebar, |s: &mut State| &mut s.sidebar, sidebar)
+        .hide_sidebar_toggle()
+        .frame_inset(FRAME)
         .titlebar_inset(cx.titlebar_inset())
         .reduced_motion(cx.is_reduced_motion())
         .build(k);
+    // Hyprland draws no title bar, so the shell's empty band above the panes is pushed out of
+    // the window, leaving the usual frame inset at the top.
+    let shell = el()
+        .key("shell-frame")
+        .w_full()
+        .h_full()
+        .child(
+            el().key("shell-trim")
+                .pin(Some(0.0), Some(-TITLEBAR_TRIM), Some(0.0), Some(0.0))
+                .child(shell),
+        )
+        .children((!s.sidebar.is_open()).then(|| {
+            // With the sidebar (and its footer) hidden, bring it back from the same corner.
+            IconButton::new(&shell::SIDEBAR)
+                .variant(IconButtonVariant::GhostMuted)
+                .label("Show sidebar")
+                .help("Show sidebar")
+                .on_press(|s: &mut State| s.sidebar.set_open(true))
+                .build(k)
+                .key("expand")
+                .pin(Some(FRAME * 2.0), None, None, Some(FRAME * 2.0))
+        }));
     if let Some(t) = s.toasts.build(k) {
         layers.push(t);
     }

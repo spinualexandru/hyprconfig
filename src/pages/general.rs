@@ -132,9 +132,7 @@ fn status(colors: &Remote<Colors>) -> String {
         _ if colors.loading => "Generating colours…".to_owned(),
         Some(c) => match c.used {
             Some(g) => format!("Using {}", g.name()),
-            None => {
-                "Neither generator is available; using ~/.config/hyprconfig/theme.css".to_owned()
-            }
+            None => "Using theme.css".to_owned(),
         },
         None => match &colors.error {
             Some(e) => format!("Couldn't load colours: {e}"),
@@ -203,16 +201,14 @@ fn colors_card(s: &State, k: &Kit) -> El {
 
     Card::new()
         .title("Colours")
-        .description("Where Hyprconfig takes its colours from")
+        .description("Where the app colours come from")
         .action(refresh)
         .gap(16.0)
         .child(row().key("generator-row").w_full().child(ui::setting(
             k,
             "generator-setting",
             "Preferred generator",
-            "Chromasync renders your wallpaper with your chromasync profile; Noctalia uses its \
-                 current colour scheme. When the preferred one isn't available the other is used, \
-                 then ~/.config/hyprconfig/theme.css.",
+            "Falls back to the other, then theme.css",
             true,
             picker,
         )))
@@ -238,10 +234,7 @@ fn integration_setting(s: &State, k: &Kit) -> Option<El> {
         k,
         "noctalia",
         "Noctalia integration",
-        "Reads every Noctalia colour scheme, builtin and custom ones included, and recolours \
-         the moment its colours, light or dark mode or wallpaper change. Adds a template \
-         (~/.config/noctalia/hyprconfig.toml) and `hyprconfig notify` to its On Theme Mode \
-         Changed and On Wallpaper Changed hooks; your other hooks stay.",
+        "Follow Noctalia's theme and wallpaper changes",
         !busy,
         switch,
     )))
@@ -252,7 +245,7 @@ pub fn view(s: &State, k: &Kit) -> El {
         k,
         "general",
         "General",
-        "General settings and preferences for Hyprland configuration.",
+        "App preferences",
         Vec::new(),
         vec![colors_card(s, k)],
     )

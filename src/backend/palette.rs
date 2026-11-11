@@ -406,9 +406,7 @@ fn noctalia() -> Result<String, String> {
     match source.as_str() {
         "wallpaper" => noctalia_wallpaper(&name),
         "community" => noctalia_community(&name),
-        _ => Err(format!(
-            "its {source} scheme \"{name}\" can only be read with Noctalia integration on"
-        )),
+        _ => Err(format!("{source} scheme \"{name}\" needs the integration")),
     }
 }
 

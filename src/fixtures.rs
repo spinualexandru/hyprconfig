@@ -37,7 +37,7 @@ pub const SCENES: &[Scene] = &[
             skipped: vec![
                 (
                     Generator::Noctalia,
-                    "its builtin scheme \"Noctalia\" can't be read; choose a wallpaper or community scheme in Noctalia".into(),
+                    "builtin scheme \"Noctalia\" needs the integration".into(),
                 ),
                 (Generator::Chromasync, "not installed".into()),
             ],
