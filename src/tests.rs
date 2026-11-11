@@ -489,6 +489,21 @@ fn the_sidebar_toggle_shortcut_collapses_it() {
 }
 
 #[test]
+fn the_collapsed_sidebar_keeps_its_icons() {
+    let mut rt = runtime(State::new());
+    tap(&mut rt, "collapse");
+    assert!(!rt.state.sidebar.is_open());
+    // The pages stay reachable as icons, named by their tooltips.
+    assert!(rt.find("brand").is_some());
+    assert!(rt.find("theme").is_some());
+    tap(&mut rt, Page::Audio.id());
+    assert_eq!(rt.state.page, Page::Audio);
+    tap(&mut rt, "expand");
+    assert!(rt.state.sidebar.is_open());
+    assert!(rt.find("collapse").is_some());
+}
+
+#[test]
 fn every_scene_builds() {
     for (name, scene) in fixtures::SCENES {
         let mut s = State::new();

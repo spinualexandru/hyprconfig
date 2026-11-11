@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use rune::prefs::Prefs;
-use rune::{AppSpec, Cx, El, ImageCache, KeyEvent, Tx, Waker, col, el, row, text};
+use rune::{AppSpec, Cx, El, ImageCache, KeyEvent, Side, Tx, Waker, col, el, row, text};
 use rune_kit::shell::{self, PaneState, Sidebar, SidebarRow, SplitView};
 use rune_kit::{IconButton, IconButtonVariant, Kit};
 
@@ -21,6 +21,10 @@ pub const APP_ID: &str = "hyprconfig";
 const FRAME: f32 = 8.0;
 /// How much of the shell's title bar band to cut, keeping a frame-wide strip.
 const TITLEBAR_TRIM: f32 = shell::TOOLBAR_HEIGHT - FRAME;
+/// The collapsed sidebar's width: its icons, and the list's inset either side.
+const RAIL: f32 = 56.0;
+/// The height of a page's icon in the collapsed sidebar.
+const RAIL_ROW: f32 = 32.0;
 
 /// The pref holding the light or dark choice made in the sidebar.
 const DARK_PREF: &str = "dark";
@@ -207,6 +211,81 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let mut layers = Vec::new();
     let main = pages::view(s, k, cx, &mut layers);
 
+    // Collapsed, the sidebar narrows to a rail of icons rather than leaving the window. Both
+    // write to the same pane state, so its shortcut, and dragging its edge, still open and
+    // close it.
+    let rail = PaneState::new(RAIL).range(RAIL, RAIL);
+    let (pane, content) = if s.sidebar.is_open() {
+        (&s.sidebar, sidebar(s, k, dark))
+    } else {
+        (&rail, sidebar_rail(s, k, dark))
+    };
+    let shell = SplitView::new(main)
+        .sidebar(pane, |s: &mut State| &mut s.sidebar, content)
+        .hide_sidebar_toggle()
+        .frame_inset(FRAME)
+        .titlebar_inset(cx.titlebar_inset())
+        .reduced_motion(cx.is_reduced_motion())
+        .build(k);
+    // Hyprland draws no title bar, so the shell's empty band above the panes is pushed out of
+    // the window, leaving the usual frame inset at the top.
+    let shell = el().key("shell-frame").w_full().h_full().child(
+        el().key("shell-trim")
+            .pin(Some(0.0), Some(-TITLEBAR_TRIM), Some(0.0), Some(0.0))
+            .child(shell),
+    );
+    if let Some(t) = s.toasts.build(k) {
+        layers.push(t);
+    }
+    rune_kit::root(shell, layers)
+}
+
+/// The app's mark: Hyprland's logo on an accent tile.
+fn logo(k: &Kit) -> El {
+    el().key("logo")
+        .size(32.0, 32.0)
+        .radius(8.0)
+        .fill(k.c.bg_accent)
+        .center()
+        .child(rune::icon(&icons::HYPRLAND, 18.0).color(k.c.text_contrast))
+        .a11y_hidden()
+}
+
+/// The button flipping light and dark mode.
+fn theme_button(k: &Kit, dark: bool) -> El {
+    let (icon, help) = if dark {
+        (&icons::MOON, "Switch to light mode")
+    } else {
+        (&icons::SUN, "Switch to dark mode")
+    };
+    IconButton::new(icon)
+        .variant(IconButtonVariant::GhostMuted)
+        .label(help)
+        .help(help)
+        .on_press(move |s: &mut State| set_dark(s, Some(!dark)))
+        .build(k)
+        .key("theme")
+}
+
+/// The button collapsing the sidebar to its rail, or expanding the rail back.
+fn sidebar_button(k: &Kit, open: bool) -> El {
+    let (key, help) = if open {
+        ("collapse", "Collapse sidebar")
+    } else {
+        ("expand", "Expand sidebar")
+    };
+    IconButton::new(&shell::SIDEBAR)
+        .variant(IconButtonVariant::GhostMuted)
+        .label(help)
+        .help(help)
+        .on_press(move |s: &mut State| s.sidebar.set_open(!open))
+        .build(k)
+        .key(key)
+        .expanded(open)
+}
+
+/// The open sidebar: the app's name, a row per page, and the appearance and collapse buttons.
+fn sidebar(s: &State, k: &Kit, dark: bool) -> El {
     let brand = row()
         .key("brand")
         .w_full()
@@ -214,16 +293,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         .px(4.0)
         .py(6.0)
         .center_y()
-        .child(
-            rune::el()
-                .key("logo")
-                .size(32.0, 32.0)
-                .radius(8.0)
-                .fill(k.c.bg_accent)
-                .center()
-                .child(rune::icon(&icons::HYPRLAND, 18.0).color(k.c.text_contrast))
-                .a11y_hidden(),
-        )
+        .child(logo(k))
         .child(
             col()
                 .key("names")
@@ -254,67 +324,66 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
                 .key(p.id()),
         );
     }
-    let (icon, help) = if dark {
-        (&icons::MOON, "Switch to light mode")
-    } else {
-        (&icons::SUN, "Switch to dark mode")
-    };
-    let theme = IconButton::new(icon)
-        .variant(IconButtonVariant::GhostMuted)
-        .label(help)
-        .help(help)
-        .on_press(move |s: &mut State| set_dark(s, Some(!dark)))
-        .build(k)
-        .key("theme");
-    let collapse = IconButton::new(&shell::SIDEBAR)
-        .variant(IconButtonVariant::GhostMuted)
-        .label("Hide sidebar")
-        .help("Hide sidebar")
-        .on_press(|s: &mut State| s.sidebar.set_open(false))
-        .build(k)
-        .key("collapse");
     let footer = row()
         .key("footer")
         .w_full()
         .gap(4.0)
         .center_y()
-        .child(theme)
-        .child(collapse);
-    let sidebar = sidebar.footer(footer).build(k);
+        .child(theme_button(k, dark))
+        .child(sidebar_button(k, true));
+    sidebar.footer(footer).build(k)
+}
 
-    let shell = SplitView::new(main)
-        .sidebar(&s.sidebar, |s: &mut State| &mut s.sidebar, sidebar)
-        .hide_sidebar_toggle()
-        .frame_inset(FRAME)
-        .titlebar_inset(cx.titlebar_inset())
-        .reduced_motion(cx.is_reduced_motion())
-        .build(k);
-    // Hyprland draws no title bar, so the shell's empty band above the panes is pushed out of
-    // the window, leaving the usual frame inset at the top.
-    let shell = el()
-        .key("shell-frame")
+/// The collapsed sidebar: the same pages and buttons as icons, each named by its tooltip.
+fn sidebar_rail(s: &State, k: &Kit, dark: bool) -> El {
+    let brand = row()
+        .key("brand")
         .w_full()
-        .h_full()
-        .child(
-            el().key("shell-trim")
-                .pin(Some(0.0), Some(-TITLEBAR_TRIM), Some(0.0), Some(0.0))
-                .child(shell),
-        )
-        .children((!s.sidebar.is_open()).then(|| {
-            // With the sidebar (and its footer) hidden, bring it back from the same corner.
-            IconButton::new(&shell::SIDEBAR)
-                .variant(IconButtonVariant::GhostMuted)
-                .label("Show sidebar")
-                .help("Show sidebar")
-                .on_press(|s: &mut State| s.sidebar.set_open(true))
-                .build(k)
-                .key("expand")
-                .pin(Some(FRAME * 2.0), None, None, Some(FRAME * 2.0))
-        }));
-    if let Some(t) = s.toasts.build(k) {
-        layers.push(t);
+        .py(6.0)
+        .center()
+        .child(logo(k).help("Hyprconfig").help_side(Side::Right));
+    let mut rail = Sidebar::new().label("Pages").header(brand);
+    for &p in Page::ALL {
+        rail = rail.child(rail_item(k, p, s.page == p));
     }
-    rune_kit::root(shell, layers)
+    let footer = col()
+        .key("footer")
+        .w_full()
+        .gap(4.0)
+        .center()
+        .child(theme_button(k, dark).help_side(Side::Right))
+        .child(sidebar_button(k, false).help_side(Side::Right));
+    rail.footer(footer).build(k)
+}
+
+/// A page's icon in the rail, selected as its sidebar row is, with its title as a tooltip.
+fn rail_item(k: &Kit, p: Page, selected: bool) -> El {
+    let c = &k.c;
+    let glyph = if selected { c.icon_base } else { c.icon_muted };
+    let mut item = row()
+        .key(p.id())
+        .label(p.title())
+        .help(p.title())
+        .help_side(Side::Right)
+        .w_full()
+        .h(RAIL_ROW)
+        .center()
+        .radius(k.radius.md)
+        .motion(k.motion.control)
+        .focusable(true)
+        .focus_selected(selected)
+        .child(
+            rune::icon(p.icon(), 16.0)
+                .key("icon")
+                .color(glyph)
+                .a11y_hidden(),
+        );
+    item = k.interactive(item);
+    if selected {
+        item = item.fill(c.pressed);
+    }
+    item.on_press_tx(move |s: &mut State, tx: &mut Tx| navigate(s, p, tx))
+        .role("listitem")
 }
 
 fn setup(s: &mut State, waker: Waker) {
