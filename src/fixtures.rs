@@ -10,6 +10,7 @@ use crate::backend::hyprland::{
 };
 use crate::backend::hyprpaper::{Daemon, HyprpaperConfig, Wallpaper};
 use crate::backend::palette::{Colors, Generator};
+use crate::backend::tailscale::{TailscalePeer, TailscaleStatus};
 use crate::jobs::Remote;
 use crate::pages::Page;
 use crate::pages::displays::{self, Phase};
@@ -91,6 +92,19 @@ pub const SCENES: &[Scene] = &[
         s.network.interfaces = Remote::ready(interfaces());
         s.network.wifi = Remote::ready(wifi());
         s.network.selected = Some("wlan0".into());
+    }),
+    ("network-tailscale", |s| {
+        s.page = Page::Network;
+        s.network.interfaces = Remote::ready(with_tailscale());
+        s.network.wifi = Remote::ready(wifi());
+        s.network.tailscale = Remote::ready(Some(tailscale(true)));
+    }),
+    ("network-tailscale-detail", |s| {
+        s.page = Page::Network;
+        s.network.interfaces = Remote::ready(with_tailscale());
+        s.network.wifi = Remote::ready(wifi());
+        s.network.tailscale = Remote::ready(Some(tailscale(true)));
+        s.network.selected = Some("tailscale0".into());
     }),
     ("network-loading", |s| s.page = Page::Network),
     ("audio", |s| {
@@ -274,6 +288,59 @@ pub fn interfaces() -> Vec<NetworkInterface> {
             tx_bytes: 0,
             ssid: None,
         },
+    ]
+}
+
+/// `interfaces()` with Tailscale's tunnel.
+pub fn with_tailscale() -> Vec<NetworkInterface> {
+    let mut all = interfaces();
+    all.insert(
+        1,
+        NetworkInterface {
+            name: "tailscale0".into(),
+            state: "unknown".into(),
+            mac_address: "".into(),
+            ip_addresses: vec!["100.101.102.103/32".into(), "fd7a:115c:a1e0::1/128".into()],
+            interface_type: "Tailscale".into(),
+            mtu: "1280".into(),
+            rx_bytes: 48_234_496,
+            tx_bytes: 9_437_184,
+            ssid: None,
+        },
+    );
+    all
+}
+
+pub fn tailscale(running: bool) -> TailscaleStatus {
+    TailscaleStatus {
+        backend_state: if running { "Running" } else { "Stopped" }.into(),
+        dns_name: Some("desk.tail1234.ts.net".into()),
+        peers: if running { peers() } else { Vec::new() },
+    }
+}
+
+pub fn peers() -> Vec<TailscalePeer> {
+    let p = |name: &str, os: &str, ip: &str, online, exit_node, last_seen: Option<&str>| {
+        TailscalePeer {
+            name: name.into(),
+            os: os.into(),
+            ips: vec![ip.into()],
+            online,
+            exit_node,
+            last_seen: last_seen.map(Into::into),
+        }
+    };
+    vec![
+        p("laptop", "linux", "100.101.102.104", true, false, None),
+        p("nas", "linux", "100.101.102.105", true, true, None),
+        p(
+            "phone",
+            "android",
+            "100.101.102.106",
+            false,
+            false,
+            Some("8 days ago"),
+        ),
     ]
 }
 

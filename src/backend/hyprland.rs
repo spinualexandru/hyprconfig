@@ -218,6 +218,8 @@ pub fn get_network_info() -> Result<Vec<NetworkInterface>, String> {
             "WiFi".to_string()
         } else if interface_name.starts_with("en") || interface_name.starts_with("eth") {
             "Ethernet".to_string()
+        } else if super::tailscale::is_interface(&interface_name) {
+            "Tailscale".to_string()
         } else if interface_name.starts_with("br") {
             "Bridge".to_string()
         } else if interface_name.starts_with("docker") || interface_name.starts_with("veth") {

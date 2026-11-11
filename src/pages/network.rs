@@ -1,8 +1,9 @@
 use rune::{El, col, row, text};
-use rune_kit::{Button, ButtonVariant, Kit};
+use rune_kit::{Button, ButtonVariant, Kit, Switch};
 
-use crate::app::State;
+use crate::app::{self, State};
 use crate::backend::hyprland::{self as hypr, NetworkInterface, WifiNetwork};
+use crate::backend::tailscale::{self, TailscalePeer, TailscaleStatus};
 use crate::icons;
 use crate::jobs::{self, Remote};
 use crate::ui::{self, Card, Tone};
@@ -13,11 +14,84 @@ pub struct NetworkState {
     pub wifi: Remote<Vec<WifiNetwork>>,
     /// The interface whose details show, by name.
     pub selected: Option<String>,
+    /// Tailscale's state; `None` inside when the CLI isn't installed.
+    pub tailscale: Remote<Option<TailscaleStatus>>,
+    /// Where a `tailscale up` (true) or `down` (false) in flight is taking it.
+    pub tailscale_pending: Option<bool>,
 }
 
 pub fn load(s: &mut State) {
     load_interfaces(s);
+    load_tailscale(s);
     scan_wifi(s);
+}
+
+fn load_tailscale(s: &mut State) {
+    jobs::load(
+        s,
+        "tailscale-status",
+        |s| &mut s.network.tailscale,
+        tailscale::status,
+    );
+}
+
+fn set_tailscale(s: &mut State, on: bool) {
+    if s.network.tailscale_pending.is_some() {
+        return;
+    }
+    s.network.tailscale_pending = Some(on);
+    s.jobs.write(
+        "tailscale-set",
+        move || tailscale::set_running(on),
+        move |s, r, tx| {
+            s.network.tailscale_pending = None;
+            match r {
+                Ok(()) if on => s.toasts.success(tx, "Tailscale connected"),
+                Ok(()) => s.toasts.success(tx, "Tailscale disconnected"),
+                Err(e) if on => app::fail(s, tx, "Couldn't connect Tailscale", e),
+                Err(e) => app::fail(s, tx, "Couldn't disconnect Tailscale", e),
+            }
+            // Its addresses come and go with it.
+            load_tailscale(s);
+            load_interfaces(s);
+        },
+    );
+}
+
+/// Tailscale's status, when `i` is its tunnel and the CLI answered.
+fn tailscale_for<'a>(n: &'a NetworkState, i: &NetworkInterface) -> Option<&'a TailscaleStatus> {
+    if !tailscale::is_interface(&i.name) {
+        return None;
+    }
+    n.tailscale.data.as_ref()?.as_ref()
+}
+
+/// The on/off switch for Tailscale. Shows where a switch in flight is going.
+fn tailscale_switch(n: &NetworkState, k: &Kit, st: &TailscaleStatus) -> El {
+    let on = n.tailscale_pending.unwrap_or_else(|| st.running());
+    let busy = n.tailscale_pending.is_some() || n.tailscale.loading;
+    Switch::new(on)
+        .label("Tailscale")
+        .hide_label()
+        .disabled(busy || !st.can_toggle())
+        .on_toggle(move |s: &mut State| set_tailscale(s, !on))
+        .build(k)
+        .key("tailscale-switch")
+}
+
+fn tailscale_summary(n: &NetworkState, st: &TailscaleStatus) -> String {
+    match (n.tailscale_pending, st.backend_state.as_str()) {
+        (Some(true), _) => "Connecting…".into(),
+        (Some(false), _) => "Disconnecting…".into(),
+        (None, "Running") => match &st.dns_name {
+            Some(name) => format!("Connected as {name}"),
+            None => "Connected".into(),
+        },
+        (None, "Stopped") => "Disconnected".into(),
+        (None, "NeedsLogin") => "Not logged in. Run `tailscale up` in a terminal to log in.".into(),
+        (None, "NeedsMachineAuth") => "Waiting for an admin to approve this machine".into(),
+        (None, other) => other.to_owned(),
+    }
 }
 
 fn load_interfaces(s: &mut State) {
@@ -54,6 +128,7 @@ fn interface_icon(i: &NetworkInterface) -> &'static rune::Icon {
     match i.interface_type.as_str() {
         "WiFi" => &icons::WIFI,
         "Ethernet" => &icons::CABLE,
+        "Tailscale" => &icons::SHIELD_CHECK,
         _ => &icons::NETWORK,
     }
 }
@@ -79,7 +154,7 @@ pub fn format_bytes(bytes: u64) -> String {
     format!("{:.2} {}", bytes as f64 / 1024f64.powi(i as i32), UNITS[i])
 }
 
-fn interface_card(k: &Kit, i: &NetworkInterface) -> El {
+fn interface_card(n: &NetworkState, k: &Kit, i: &NetworkInterface) -> El {
     let name = i.name.clone();
     let mut titles = col()
         .key("titles")
@@ -97,6 +172,11 @@ fn interface_card(k: &Kit, i: &NetworkInterface) -> El {
     if let Some(ip) = i.ip_addresses.first() {
         titles = titles.child(text(ip.clone()).font(ui::mono(k)).color(k.c.text_muted));
     }
+    // Tailscale's tunnel reports `unknown` either way; its switch says whether it's on.
+    let status = match tailscale_for(n, i) {
+        Some(st) => tailscale_switch(n, k, st),
+        None => state_pill(k, &i.state),
+    };
     ui::surface(k)
         .key(format!("iface-{}", i.name))
         .role("button")
@@ -112,7 +192,7 @@ fn interface_card(k: &Kit, i: &NetworkInterface) -> El {
                 .center_y()
                 .child(ui::icon_tile(k, interface_icon(i)))
                 .child(titles)
-                .child(state_pill(k, &i.state))
+                .child(status)
                 .child(rune::icon(&icons::CHEVRON_RIGHT, 18.0).color(k.c.icon_muted)),
         )
 }
@@ -172,6 +252,94 @@ fn wifi_card(k: &Kit, n: &WifiNetwork) -> El {
     ui::surface(k).key(format!("wifi-{}", n.bssid)).child(r)
 }
 
+fn peer_card(k: &Kit, p: &TailscalePeer) -> El {
+    let sub = [p.ips.first(), Some(&p.os).filter(|os| !os.is_empty())]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(" • ");
+    let mut r = row()
+        .w_full()
+        .gap(12.0)
+        .center_y()
+        .child(ui::icon_tile(
+            k,
+            if p.mobile() {
+                &icons::SMARTPHONE
+            } else {
+                &icons::MONITOR
+            },
+        ))
+        .child(
+            col()
+                .grow(1.0)
+                .shrink()
+                .min_w(0.0)
+                .gap(2.0)
+                .child(
+                    text(p.name.clone())
+                        .font(ui::card_title_style())
+                        .color(k.c.text_strong)
+                        .truncate(),
+                )
+                .child(
+                    text(sub)
+                        .font(ui::mono(k))
+                        .color(k.c.text_muted)
+                        .selectable(true),
+                ),
+        );
+    if p.exit_node {
+        r = r.child(ui::pill(k, "EXIT NODE", Tone::Outline));
+    }
+    r = if p.online {
+        r.child(ui::pill(k, "ONLINE", Tone::Success))
+    } else {
+        let mut status = col()
+            .items_end()
+            .child(ui::pill(k, "OFFLINE", Tone::Neutral));
+        if let Some(seen) = &p.last_seen {
+            status = status.gap(4.0).child(
+                text(format!("Seen {seen}"))
+                    .font(k.ty.small)
+                    .color(k.c.text_muted),
+            );
+        }
+        r.child(status)
+    };
+    ui::surface(k).key(format!("peer-{}", p.name)).child(r)
+}
+
+/// The other devices on the tailnet, while connected.
+fn peers_section(k: &Kit, st: &TailscaleStatus) -> Option<El> {
+    if !st.running() {
+        return None;
+    }
+    let online = st.peers.iter().filter(|p| p.online).count();
+    let count = text(format!("{online} of {} online", st.peers.len()))
+        .key("count")
+        .font(k.ty.body)
+        .color(k.c.text_muted);
+    let items = if st.peers.is_empty() {
+        vec![ui::note_card(
+            k,
+            "no-peers",
+            &["No other devices on this tailnet."],
+        )]
+    } else {
+        st.peers.iter().map(|p| peer_card(k, p)).collect()
+    };
+    Some(ui::section(
+        k,
+        "peers",
+        None,
+        "Tailscale Devices",
+        Some(count),
+        items,
+    ))
+}
+
 fn skeleton_card(k: &Kit, key: String) -> El {
     ui::surface(k).key(key).child(
         row()
@@ -189,7 +357,7 @@ fn skeleton_card(k: &Kit, key: String) -> El {
     )
 }
 
-fn detail(k: &Kit, i: &NetworkInterface) -> El {
+fn detail(n: &NetworkState, k: &Kit, i: &NetworkInterface) -> El {
     let back = Button::new("Back")
         .icon(&icons::ARROW_LEFT)
         .variant(ButtonVariant::Ghost)
@@ -205,12 +373,24 @@ fn detail(k: &Kit, i: &NetworkInterface) -> El {
                 .map(|ip| ui::pill(k, ip.clone(), Tone::Outline)),
         )
     };
-    let mut fields = vec![ui::field(
+    let mut fields = Vec::new();
+    let tailscale = tailscale_for(n, i);
+    if let Some(st) = tailscale {
+        fields.push(row().key("tailscale-row").w_full().child(ui::setting(
+            k,
+            "tailscale",
+            "Tailscale",
+            &tailscale_summary(n, st),
+            st.can_toggle(),
+            tailscale_switch(n, k, st),
+        )));
+    }
+    fields.push(ui::field(
         k,
         "name",
         "Interface Name",
         ui::value_text(k, i.name.clone()),
-    )];
+    ));
     if let Some(ssid) = &i.ssid {
         fields.push(ui::field(
             k,
@@ -225,16 +405,19 @@ fn detail(k: &Kit, i: &NetworkInterface) -> El {
         "Interface Type",
         ui::value_text(k, i.interface_type.clone()),
     ));
-    fields.push(ui::field(
-        k,
-        "mac",
-        "MAC Address",
-        text(i.mac_address.clone())
-            .key("value")
-            .font(ui::mono(k))
-            .color(k.c.text_muted)
-            .selectable(true),
-    ));
+    // Tunnels (Tailscale, WireGuard) have none.
+    if !i.mac_address.is_empty() {
+        fields.push(ui::field(
+            k,
+            "mac",
+            "MAC Address",
+            text(i.mac_address.clone())
+                .key("value")
+                .font(ui::mono(k))
+                .color(k.c.text_muted)
+                .selectable(true),
+        ));
+    }
     fields.push(ui::field(k, "ips", "IP Addresses", ips));
     fields.push(ui::field(
         k,
@@ -265,15 +448,19 @@ fn detail(k: &Kit, i: &NetworkInterface) -> El {
         &interface_title(i),
         &i.name,
         vec![back],
-        vec![
-            Card::new()
-                .title("Connection Status")
-                .action(state_pill(k, &i.state))
-                .children(fields)
-                .gap(20.0)
-                .build(k)
-                .key("status"),
-        ],
+        [Card::new()
+            .title("Connection Status")
+            .action(match tailscale {
+                Some(st) => state_pill(k, if st.running() { "up" } else { "down" }),
+                None => state_pill(k, &i.state),
+            })
+            .children(fields)
+            .gap(20.0)
+            .build(k)
+            .key("status")]
+        .into_iter()
+        .chain(tailscale.and_then(|st| peers_section(k, st)))
+        .collect(),
     )
 }
 
@@ -284,15 +471,16 @@ pub fn view(s: &State, k: &Kit) -> El {
         .as_ref()
         .and_then(|name| n.interfaces.data.as_ref()?.iter().find(|i| &i.name == name))
     {
-        return detail(k, i);
+        return detail(n, k, i);
     }
-    let busy = n.interfaces.loading || n.wifi.loading;
+    let busy = n.interfaces.loading || n.wifi.loading || n.tailscale.loading;
     let refresh = Button::new("Refresh")
         .icon(&icons::REFRESH_CW)
         .variant(ButtonVariant::Outline)
         .disabled(busy)
         .on_press(|s: &mut State| {
             load_interfaces(s);
+            load_tailscale(s);
             scan_wifi(s);
         })
         .build(k)
@@ -324,7 +512,7 @@ pub fn view(s: &State, k: &Kit) -> El {
             None,
             "Network Interfaces",
             None,
-            ifaces.iter().map(|i| interface_card(k, i)).collect(),
+            ifaces.iter().map(|i| interface_card(n, k, i)).collect(),
         ));
     }
 
