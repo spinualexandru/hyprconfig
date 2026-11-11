@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use rune::prefs::Prefs;
-use rune::{AppSpec, Cx, El, ImageCache, KeyEvent, Side, Tx, Waker, col, el, row, text};
+use rune::{AppSpec, Cx, El, Image, ImageCache, KeyEvent, Side, Tx, Waker, col, el, row, text};
 use rune_kit::shell::{self, PaneState, Sidebar, SidebarRow, SplitView};
 use rune_kit::{IconButton, IconButtonVariant, Kit};
 
@@ -42,6 +42,8 @@ pub struct State {
     pub jobs: Jobs,
     pub toasts: Toasts,
     pub images: Option<ImageCache>,
+    /// The app's logo, rasterized once the image cache exists.
+    pub logo: Option<Image>,
     pub general: pages::general::GeneralState,
     pub about: pages::about::AboutState,
     pub appearance: pages::appearance::AppearanceState,
@@ -72,6 +74,7 @@ impl State {
             jobs: Jobs::new(),
             toasts: Toasts::default(),
             images: None,
+            logo: None,
             general: Default::default(),
             about: Default::default(),
             appearance: Default::default(),
@@ -240,15 +243,23 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     rune_kit::root(shell, layers)
 }
 
-/// The app's mark: Hyprland's logo on an accent tile.
-fn logo(k: &Kit) -> El {
-    el().key("logo")
-        .size(32.0, 32.0)
-        .radius(8.0)
-        .fill(k.c.bg_accent)
-        .center()
-        .child(rune::icon(&icons::HYPRLAND, 18.0).color(k.c.text_contrast))
-        .a11y_hidden()
+/// The app's logo, embedded so it shows wherever the binary runs.
+const LOGO_SVG: &[u8] = include_bytes!("../assets/hyprconfig.svg");
+/// The logo's size in the sidebar, in points.
+const LOGO_SIZE: f32 = 32.0;
+
+/// The app's mark: its logo, or Hyprland's on an accent tile where no image cache runs
+/// (headless tests).
+fn logo(s: &State, k: &Kit) -> El {
+    let mark = el().key("logo").size(LOGO_SIZE, LOGO_SIZE).a11y_hidden();
+    match &s.logo {
+        Some(img) => mark.pixels(img.pixels()),
+        None => mark
+            .radius(8.0)
+            .fill(k.c.bg_accent)
+            .center()
+            .child(rune::icon(&icons::HYPRLAND, 18.0).color(k.c.text_contrast)),
+    }
 }
 
 /// The button flipping light and dark mode.
@@ -293,7 +304,7 @@ fn sidebar(s: &State, k: &Kit, dark: bool) -> El {
         .px(4.0)
         .py(6.0)
         .center_y()
-        .child(logo(k))
+        .child(logo(s, k))
         .child(
             col()
                 .key("names")
@@ -341,7 +352,7 @@ fn sidebar_rail(s: &State, k: &Kit, dark: bool) -> El {
         .w_full()
         .py(6.0)
         .center()
-        .child(logo(k).help("Hyprconfig").help_side(Side::Right));
+        .child(logo(s, k).help("Hyprconfig").help_side(Side::Right));
     let mut rail = Sidebar::new().label("Pages").header(brand);
     for &p in Page::ALL {
         rail = rail.child(rail_item(k, p, s.page == p));
@@ -387,7 +398,10 @@ fn rail_item(k: &Kit, p: Page, selected: bool) -> El {
 }
 
 fn setup(s: &mut State, waker: Waker) {
-    s.images = Some(ImageCache::new(waker.clone()));
+    let images = ImageCache::new(waker.clone());
+    // Rasterized at 3× so it stays crisp on HiDPI screens; smaller scales draw from its mips.
+    s.logo = Some(images.svg(LOGO_SVG, LOGO_SIZE, 3.0));
+    s.images = Some(images);
     s.jobs.set_waker(waker);
 }
 
