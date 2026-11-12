@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::backend::{config, os};
-use crate::theme;
+use crate::color;
 
 mod cache;
 mod chromasync;
@@ -114,7 +114,7 @@ struct Scheme {
 impl Scheme {
     fn check(self) -> Result<Scheme, String> {
         for v in [&self.bg, &self.fg, &self.accent, &self.danger] {
-            if theme::color(v).is_none() {
+            if color::parse_css(v).is_none() {
                 return Err(format!("unreadable colour \"{v}\""));
             }
         }

@@ -302,7 +302,10 @@ mod tests {
             .replace("{{colors.primary.dark.hex}}", "#c0c1ff")
             .replace("{{colors.error.dark.hex}}", "#ffb4ab");
         let p = Palettes::parse(&rendered);
-        assert_eq!(p.dark.unwrap().accent, theme::color("#c0c1ff").unwrap());
-        assert_eq!(p.light.unwrap().danger, theme::color("#ba1a1a"));
+        assert_eq!(
+            p.dark.unwrap().accent,
+            crate::color::parse_css("#c0c1ff").unwrap()
+        );
+        assert_eq!(p.light.unwrap().danger, crate::color::parse_css("#ba1a1a"));
     }
 }

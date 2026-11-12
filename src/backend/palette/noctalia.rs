@@ -8,7 +8,7 @@ use serde_json::Value;
 use super::integration::{noctalia_rendered, noctalia_running};
 use super::{Generator, Scheme, failure, to_css, xdg_dir};
 use crate::backend::{self, hyprpaper};
-use crate::theme;
+use crate::color;
 
 /// `noctalia msg color-scheme-get`: `<source> <name>`, the name possibly with spaces.
 fn parse_scheme(reply: &str) -> Option<(String, String)> {
@@ -102,7 +102,7 @@ fn read_community_palette(json: &str, name: &str) -> Result<String, String> {
                 .ok_or_else(|| format!("its {m} palette has no {k}"))
         };
         let bg = get("surface")?;
-        let surface = theme::color(&bg).ok_or_else(|| format!("unreadable colour \"{bg}\""))?;
+        let surface = color::parse_css(&bg).ok_or_else(|| format!("unreadable colour \"{bg}\""))?;
         // Near-white or near-black in OKLab, keeping a little of the surface's hue.
         let [_, a, b, alpha] = surface.to_oklab();
         let lightness = if m == "dark" { 0.93 } else { 0.22 };
@@ -143,8 +143,8 @@ mod tests {
   "light": {"surface": "#fff8f6", "on_surface": "#231918", "primary": "#904b40", "error": "#ba1a1a"}
 }"##;
         let p = Palettes::parse(&read_noctalia_theme(json).unwrap());
-        assert_eq!(p.dark.unwrap().accent, theme::color("#ffb4a8").unwrap());
-        assert_eq!(p.light.unwrap().fg, theme::color("#231918").unwrap());
+        assert_eq!(p.dark.unwrap().accent, color::parse_css("#ffb4a8").unwrap());
+        assert_eq!(p.light.unwrap().fg, color::parse_css("#231918").unwrap());
         assert!(read_noctalia_theme(r#"{"dark": {}}"#).is_err());
     }
 

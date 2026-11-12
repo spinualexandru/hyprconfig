@@ -6,6 +6,8 @@
 use rune::Color;
 use rune_kit::{Kit, PaletteSeed};
 
+use crate::color::parse_css;
+
 /// The seeds for both appearances. A file with only `:root` uses it for both.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Palettes {
@@ -138,42 +140,8 @@ fn strip_comments(s: &str) -> String {
 fn var(vars: &str, name: &str) -> Option<Color> {
     vars.split(';').find_map(|decl| {
         let (k, v) = decl.split_once(':')?;
-        (k.trim() == name).then(|| color(v.trim())).flatten()
+        (k.trim() == name).then(|| parse_css(v.trim())).flatten()
     })
-}
-
-/// `#rgb`, `#rrggbb`, `#rrggbbaa`, `hsl(h s% l%)` (commas optional) or `rgb(r g b)`.
-pub fn color(v: &str) -> Option<Color> {
-    if v.starts_with('#') {
-        return rune::color::hex(v);
-    }
-    let (func, args) = v.split_once('(')?;
-    let args: Vec<f32> = args
-        .trim_end_matches(')')
-        .split(|c: char| c == ',' || c == '/' || c.is_whitespace())
-        .filter(|a| !a.is_empty())
-        .map(|a| {
-            a.trim_end_matches(['%'])
-                .trim_end_matches("deg")
-                .parse::<f32>()
-        })
-        .collect::<Result<_, _>>()
-        .ok()?;
-    let [a, b, c] = [*args.first()?, *args.get(1)?, *args.get(2)?];
-    let (r, g, bl) = match func.trim() {
-        "hsl" | "hsla" => hsl_to_rgb(a, b / 100.0, c / 100.0),
-        "rgb" | "rgba" => (a / 255.0, b / 255.0, c / 255.0),
-        _ => return None,
-    };
-    let byte = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
-    rune::color::hex(&format!("#{:02x}{:02x}{:02x}", byte(r), byte(g), byte(bl)))
-}
-
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
-    let k = |n: f32| (n + h / 30.0).rem_euclid(12.0);
-    let a = s * l.min(1.0 - l);
-    let f = |n: f32| l - a * (k(n) - 3.0).min(9.0 - k(n)).clamp(-1.0, 1.0);
-    (f(0.0), f(8.0), f(4.0))
 }
 
 #[cfg(test)]
@@ -215,13 +183,6 @@ mod tests {
     }
 
     #[test]
-    fn hsl_matches_css() {
-        // hsl(215 90% 73%) is #7cb0f8 in a browser.
-        assert_eq!(color("hsl(215 90% 73%)"), rune::color::hex("#7cb0f8"));
-        assert_eq!(color("hsl(0, 0%, 100%)"), rune::color::hex("#ffffff"));
-    }
-
-    #[test]
     fn kits_rebuild_only_when_the_colours_change() {
         let mut kits = Kits::default();
         assert!(kits.update(CSS), "new colours");
@@ -237,6 +198,5 @@ mod tests {
     #[test]
     fn garbage_falls_back() {
         assert_eq!(Palettes::parse("not css"), Palettes::default());
-        assert!(color("var(--x)").is_none());
     }
 }
