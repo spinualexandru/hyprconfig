@@ -28,6 +28,19 @@ pub struct MonitorInfo {
     pub available_modes: Vec<DisplayMode>,
 }
 
+impl MonitorInfo {
+    /// Width over height as the screen shows it: a monitor turned 90 or 270 degrees swaps its
+    /// mode's sides.
+    pub fn aspect(&self) -> f32 {
+        let (w, h) = (f32::from(self.width), f32::from(self.height));
+        if self.transform.ends_with("90") || self.transform.ends_with("270") {
+            h / w
+        } else {
+            w / h
+        }
+    }
+}
+
 pub fn get_monitors() -> Result<Vec<MonitorInfo>, String> {
     let output = Command::new("hyprctl")
         .args(["monitors", "-j"])

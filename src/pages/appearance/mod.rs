@@ -11,6 +11,7 @@ use rune::{FileDialogOptions, Image, Tx};
 
 use crate::app::{self, State};
 use crate::backend::config::{self, MatugenPreferences};
+use crate::backend::hyprland as hypr;
 use crate::backend::hyprpaper::{self, HyprpaperConfig, Wallpaper};
 use crate::backend::os;
 use crate::jobs::{self, Remote};
@@ -48,6 +49,9 @@ pub struct AppearanceState {
     /// The current wallpaper's path and decoded image.
     pub image: Option<(String, Image)>,
     pub preview: Preview,
+    /// Each connected monitor's name and on-screen aspect ratio, so the preview takes the
+    /// shape of the screen the wallpaper fills.
+    pub screens: Vec<(String, f32)>,
 }
 
 /// The wallpaper shown: the last one listed (the most recent).
@@ -55,8 +59,35 @@ pub fn current(config: &HyprpaperConfig) -> Option<&Wallpaper> {
     config.wallpapers.last()
 }
 
+/// The aspect ratio of the screen `w` is shown on: its own monitor, else the first one, else
+/// 16:9 until the monitors are known.
+pub fn screen_aspect(a: &AppearanceState, w: &Wallpaper) -> f32 {
+    a.screens
+        .iter()
+        .find(|(name, _)| *name == w.monitor)
+        .or(a.screens.first())
+        .map_or(16.0 / 9.0, |&(_, r)| r)
+}
+
 pub fn load(s: &mut State) {
     load_config(s);
+    s.jobs.run(
+        "screens",
+        || {
+            Ok(hypr::get_monitors()?
+                .into_iter()
+                .map(|m| {
+                    let r = m.aspect();
+                    (m.name, r)
+                })
+                .collect())
+        },
+        |s, r: Result<Vec<(String, f32)>, String>, _| {
+            if let Ok(screens) = r {
+                s.appearance.screens = screens;
+            }
+        },
+    );
     s.jobs.run(
         "matugen-exists",
         || Ok(os::tool_exists("matugen")),

@@ -10,11 +10,18 @@ use crate::app::State;
 use crate::icons;
 use crate::ui::{self, Card};
 
-fn preview(s: &State, k: &Kit) -> El {
+/// The wallpaper at the shape of its screen, filled as the desktop fills it, so resizing the
+/// window scales the preview instead of changing its crop.
+fn preview(s: &State, k: &Kit, w: &Wallpaper) -> El {
+    let fit = match w.fit_mode.as_str() {
+        "contain" | "fit" => SurfaceFit::Fit,
+        _ => SurfaceFit::Fill,
+    };
     let frame = el()
         .key("preview")
-        .w_full()
-        .h(400.0)
+        .aspect_fit(screen_aspect(&s.appearance, w))
+        .max_h(PREVIEW_MAX_H)
+        .self_center()
         .radius(10.0)
         .fill(k.c.layer_02)
         .label("Current wallpaper");
@@ -30,9 +37,12 @@ fn preview(s: &State, k: &Kit) -> El {
                         .color(k.c.text_muted),
                 ),
         ),
-        (Some((_, img)), _) => frame.pixels_fit(img.pixels(), SurfaceFit::Fill),
+        (Some((_, img)), _) => frame.pixels_fit(img.pixels(), fit),
     }
 }
+
+/// Tallest the preview grows in a wide window, so the details under it stay in view.
+const PREVIEW_MAX_H: f32 = 600.0;
 
 fn wallpaper_card(s: &State, k: &Kit) -> El {
     let a = &s.appearance;
@@ -85,7 +95,7 @@ fn wallpaper_card(s: &State, k: &Kit) -> El {
                 .key("current")
                 .w_full()
                 .gap(16.0)
-                .child(preview(s, k))
+                .child(preview(s, k, w))
                 .child(ui::field(
                     k,
                     "path",

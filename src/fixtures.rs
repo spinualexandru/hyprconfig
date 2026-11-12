@@ -61,6 +61,7 @@ pub const SCENES: &[Scene] = &[
             }],
             source: Some(Daemon::Hyprpaper),
         });
+        s.appearance.screens = vec![("DP-1".into(), 16.0 / 10.0)];
         s.appearance.matugen = true;
         s.appearance.prefs.enable = true;
     }),
