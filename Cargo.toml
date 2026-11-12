@@ -10,8 +10,8 @@ default-run = "hyprconfig"
 [dependencies]
 # Anomaly's Rune UI framework (not the crates.io scripting language). Both crates come from the
 # same commit on rune's `dev` branch; bump them together.
-rune = { git = "https://github.com/anomalyco/rune", rev = "2b20250c1e58e3c0783b740254a9f9199cd64eca", features = ["native-file-dialog"] }
-rune-kit = { git = "https://github.com/anomalyco/rune", rev = "2b20250c1e58e3c0783b740254a9f9199cd64eca" }
+rune = { git = "https://github.com/anomalyco/rune", rev = "24bd7bbb60db77a4149e64318a3df6fccbee54d1", features = ["native-file-dialog"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "24bd7bbb60db77a4149e64318a3df6fccbee54d1" }
 
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
