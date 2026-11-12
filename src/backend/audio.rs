@@ -540,3 +540,103 @@ pub fn set_mute(node_id: u32, muted: bool) -> Result<(), String> {
         Err(e) => Err(format!("Failed to set mute: {}", e)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(line: &str) -> AudioDevice {
+        parse_device_line(line, "sink").expect("line should parse")
+    }
+
+    fn stream(line: &str) -> AudioStream {
+        parse_stream_line(line).expect("line should parse")
+    }
+
+    #[test]
+    fn a_device_line_gives_its_id_name_and_default_marker() {
+        let d = device(" │  *   53. Built-in Audio Analog Stereo        [vol: 0.30]");
+        assert_eq!(d.id, 53);
+        assert_eq!(d.name, "Built-in Audio Analog Stereo");
+        assert_eq!(d.description, d.name);
+        assert_eq!(d.device_type, "sink");
+        assert!(d.is_default);
+
+        let d = device(" │      54. HDMI / DisplayPort 2 Output         [vol: 1.00]");
+        assert_eq!(d.id, 54);
+        assert_eq!(d.name, "HDMI / DisplayPort 2 Output");
+        assert!(!d.is_default);
+    }
+
+    #[test]
+    fn a_device_line_leaves_volume_and_mute_for_get_volume_to_fill() {
+        let d = device(" │      55. USB Headset [vol: 0.40 MUTED]");
+        assert_eq!(d.name, "USB Headset");
+        assert_eq!(d.volume, 0.0);
+        assert!(!d.muted);
+    }
+
+    #[test]
+    fn a_device_name_may_contain_dots_and_need_not_have_a_volume() {
+        let d = device(" ├─ *   61. USB Audio 2.0 Analog Stereo [vol: 0.75]");
+        assert_eq!(d.id, 61);
+        assert_eq!(d.name, "USB Audio 2.0 Analog Stereo");
+        assert!(d.is_default);
+
+        assert_eq!(device(" │      62. Dummy Output").name, "Dummy Output");
+    }
+
+    #[test]
+    fn a_device_line_without_a_numeric_id_is_skipped() {
+        assert_eq!(parse_device_line(" │  Built-in Audio", "sink"), None);
+        assert_eq!(parse_device_line(" │  v1.2 thing", "source"), None);
+    }
+
+    #[test]
+    fn a_stream_line_splits_app_and_media_name_at_the_colon() {
+        let s = stream(" │      64. firefox: AudioStream [vol: 0.50]");
+        assert_eq!(s.id, 64);
+        assert_eq!(s.app_name, "firefox");
+        assert_eq!(s.media_name.as_deref(), Some("AudioStream"));
+        assert_eq!(s.volume, 0.0);
+        assert!(!s.muted);
+    }
+
+    #[test]
+    fn a_stream_line_without_a_media_name_has_none() {
+        let s = stream(" │      70. Firefox");
+        assert_eq!(s.app_name, "Firefox");
+        assert_eq!(s.media_name, None);
+
+        assert_eq!(stream("     72. mpv: [vol: 0.80]").media_name, None);
+    }
+
+    #[test]
+    fn a_stream_without_a_colon_splits_at_the_inline_volume_colon() {
+        // The colon in "[vol:" is taken as the app/media separator.
+        let s = stream(" │      71. Brave Browser [vol: 1.00 MUTED]");
+        assert_eq!(s.app_name, "Brave Browser [vol");
+        assert_eq!(s.media_name.as_deref(), Some("1.00 MUTED]"));
+        assert!(!s.muted);
+    }
+
+    #[test]
+    fn a_stream_line_tolerates_a_default_marker() {
+        assert_eq!(stream(" │  *   73. spotify").id, 73);
+    }
+
+    #[test]
+    fn a_stream_port_line_is_parsed_as_a_stream() {
+        // wpctl lists each stream's ports under it; the parser does not tell them apart.
+        let s = stream(" │           75. output_FL       > ALC1220 Analog:playback_FL\t[active]");
+        assert_eq!(s.id, 75);
+        assert_eq!(s.app_name, "output_FL       > ALC1220 Analog");
+        assert_eq!(s.media_name.as_deref(), Some("playback_FL"));
+    }
+
+    #[test]
+    fn a_stream_line_without_a_numeric_id_is_skipped() {
+        assert_eq!(parse_stream_line(" │  Firefox"), None);
+        assert_eq!(parse_stream_line(" │  firefox.bin: Playback"), None);
+    }
+}
