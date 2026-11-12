@@ -50,16 +50,6 @@ pub struct AppearanceState {
     pub preview: Preview,
 }
 
-impl Default for MatugenPreferences {
-    fn default() -> Self {
-        MatugenPreferences {
-            enable: false,
-            light_mode: false,
-            generator_type: "scheme-tonal-spot".into(),
-        }
-    }
-}
-
 /// The wallpaper shown: the last one listed (the most recent).
 pub fn current(config: &HyprpaperConfig) -> Option<&Wallpaper> {
     config.wallpapers.last()

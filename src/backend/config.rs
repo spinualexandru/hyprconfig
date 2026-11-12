@@ -13,6 +13,16 @@ pub struct MatugenPreferences {
     pub generator_type: String,
 }
 
+impl Default for MatugenPreferences {
+    fn default() -> Self {
+        MatugenPreferences {
+            enable: false,
+            light_mode: false,
+            generator_type: "scheme-tonal-spot".into(),
+        }
+    }
+}
+
 /// Main preferences configuration structure
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PreferencesConfig {
