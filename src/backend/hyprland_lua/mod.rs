@@ -43,13 +43,7 @@ pub fn config_path() -> Result<PathBuf, String> {
         return Ok(path);
     }
 
-    let config_dir = match std::env::var("XDG_CONFIG_HOME") {
-        Ok(xdg_config) => PathBuf::from(xdg_config),
-        Err(_) => std::env::var("HOME")
-            .map(|home| PathBuf::from(home).join(".config"))
-            .map_err(|_| "Could not determine home directory".to_string())?,
-    };
-    let hypr_dir = config_dir.join("hypr");
+    let hypr_dir = super::os::config_home()?.join("hypr");
     let lua_path = hypr_dir.join("hyprland.lua");
     if !lua_path.exists() && hypr_dir.join("hyprland.conf").exists() {
         return Err(format!(

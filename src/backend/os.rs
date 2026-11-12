@@ -1,4 +1,16 @@
+use std::path::PathBuf;
 use std::process::Command;
+
+/// `$XDG_CONFIG_HOME`, or `$HOME/.config` when it is unset (or not valid UTF-8). A set but
+/// empty value is used as is.
+pub fn config_home() -> Result<PathBuf, String> {
+    match std::env::var("XDG_CONFIG_HOME") {
+        Ok(xdg_config) => Ok(PathBuf::from(xdg_config)),
+        Err(_) => std::env::var("HOME")
+            .map(|home| PathBuf::from(home).join(".config"))
+            .map_err(|_| "Could not determine home directory".to_string()),
+    }
+}
 
 /// Whether `name` is an executable on `PATH`, as `which` would find it, without starting a
 /// process to ask.

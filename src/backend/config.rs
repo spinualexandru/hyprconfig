@@ -3,6 +3,8 @@ use std::fs;
 use std::path::PathBuf;
 use toml_edit::{DocumentMut, value};
 
+use super::os;
+
 /// Matugen preferences structure
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MatugenPreferences {
@@ -19,17 +21,7 @@ pub struct PreferencesConfig {
 
 /// Get the configuration file path using XDG_CONFIG_HOME or fallback to ~/.config
 fn get_config_path() -> Result<PathBuf, String> {
-    // Try XDG_CONFIG_HOME first
-    let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg_config)
-    } else {
-        // Fallback to ~/.config
-        let home_dir =
-            std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-        PathBuf::from(home_dir).join(".config")
-    };
-
-    let hyprconfig_dir = config_dir.join("hyprconfig");
+    let hyprconfig_dir = os::config_home()?.join("hyprconfig");
 
     // Create the hyprconfig directory if it doesn't exist
     if !hyprconfig_dir.exists() {
@@ -346,15 +338,7 @@ const MATUGEN_TEMPLATE: &str = r#"/* Hyprconfig Theme - Matugen Template
 
 /// Get the theme CSS file path (XDG_CONFIG_HOME/hyprconfig/theme.css)
 fn get_theme_css_path() -> Result<PathBuf, String> {
-    let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg_config)
-    } else {
-        let home_dir =
-            std::env::var("HOME").map_err(|_| "Could not determine home directory".to_string())?;
-        PathBuf::from(home_dir).join(".config")
-    };
-
-    let hyprconfig_dir = config_dir.join("hyprconfig");
+    let hyprconfig_dir = os::config_home()?.join("hyprconfig");
 
     if !hyprconfig_dir.exists() {
         fs::create_dir_all(&hyprconfig_dir)
