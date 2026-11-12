@@ -64,7 +64,7 @@ fn load_config_document(config_path: &PathBuf) -> Result<DocumentMut, String> {
         .map_err(|e| format!("Failed to parse TOML: {}", e))
 }
 
-/// Tauri command to get current preferences
+/// Read the current preferences, creating the file with defaults if missing
 pub fn get_preferences() -> Result<PreferencesConfig, String> {
     let config_path = get_config_path()?;
     ensure_config_exists(&config_path)?;
@@ -100,7 +100,7 @@ pub fn get_preferences() -> Result<PreferencesConfig, String> {
     })
 }
 
-/// Tauri command to update matugen preferences
+/// Update the matugen preferences, preserving the rest of the file
 pub fn update_matugen_preferences(
     enable: bool,
     light_mode: bool,
@@ -382,7 +382,7 @@ fn get_matugen_template_path() -> Result<PathBuf, String> {
     Ok(templates_dir.join("hyprconfig.css"))
 }
 
-/// Tauri command to get theme CSS content, creating default if missing
+/// Get the theme CSS content, creating the default if missing
 pub fn get_theme_css() -> Result<String, String> {
     let theme_path = get_theme_css_path()?;
 
@@ -394,7 +394,7 @@ pub fn get_theme_css() -> Result<String, String> {
     fs::read_to_string(&theme_path).map_err(|e| format!("Failed to read theme CSS: {}", e))
 }
 
-/// Tauri command to ensure matugen template exists
+/// Ensure the matugen template exists and return its path
 pub fn ensure_matugen_template() -> Result<String, String> {
     let template_path = get_matugen_template_path()?;
 
