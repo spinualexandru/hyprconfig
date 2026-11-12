@@ -35,7 +35,7 @@ fn command(k: &Kit, params: &str, vars: &VarValues) -> El {
     let parts = dispatchers::resolve_command(params, |name| vars.contains_key(name));
     if !parts.iter().any(|p| p.variable) {
         let shown = if params.is_empty() {
-            "—".to_owned()
+            "-".to_owned()
         } else {
             params.to_owned()
         };
