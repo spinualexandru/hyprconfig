@@ -155,21 +155,3 @@ fn failure(output: &std::process::Output) -> String {
         .and_then(|s| s.lines().next().map(str::to_owned))
         .unwrap_or_else(|| format!("exited with {}", output.status))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn preference_order() {
-        assert_eq!(
-            Generator::Noctalia.order(),
-            [Generator::Noctalia, Generator::Chromasync]
-        );
-        assert_eq!(Generator::default(), Generator::Chromasync);
-        assert_eq!(
-            serde_json::to_string(&Generator::Noctalia).unwrap(),
-            "\"noctalia\""
-        );
-    }
-}

@@ -139,6 +139,7 @@ mod tests {
         }
         assert_eq!(Event::parse("colors\n"), Some(Event::Colors));
         assert_eq!(Event::parse("battery"), None);
+        assert!(notify("battery").is_err());
     }
 
     #[test]
@@ -161,10 +162,5 @@ mod tests {
         sender.join().unwrap();
         assert_eq!(got, vec![Event::Mode, Event::Colors]);
         std::fs::remove_file(&path).unwrap();
-    }
-
-    #[test]
-    fn notifying_nobody_is_fine() {
-        assert!(notify("battery").is_err());
     }
 }
