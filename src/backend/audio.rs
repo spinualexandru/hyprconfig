@@ -110,17 +110,20 @@ fn parse_stream_line(line: &str) -> Option<AudioStream> {
     let id_str = trimmed[..dot_pos].trim().trim_start_matches('*').trim();
     let id: u32 = id_str.parse().ok()?;
 
-    // Get the rest after the dot
-    let rest = trimmed[dot_pos + 1..].trim();
+    // Get the rest after the dot, without the inline volume (its colon is not a separator)
+    let rest = trimmed[dot_pos + 1..]
+        .split('[')
+        .next()
+        .unwrap_or("")
+        .trim();
 
     // Parse app name (before colon or the whole name)
-    let (app_name, media_name) = if let Some(colon_pos) = rest.find(':') {
-        let app = rest[..colon_pos].trim();
-        let media = rest[colon_pos + 1..].split('[').next().unwrap_or("").trim();
-        (app, if media.is_empty() { None } else { Some(media) })
-    } else {
-        let name = rest.split('[').next().unwrap_or(rest).trim();
-        (name, None)
+    let (app_name, media_name) = match rest.split_once(':') {
+        Some((app, media)) => {
+            let media = media.trim();
+            (app.trim(), (!media.is_empty()).then_some(media))
+        }
+        None => (rest, None),
     };
 
     Some(AudioStream {
@@ -316,24 +319,21 @@ fn get_pw_dump_streams(sink_ids: &[u32], source_ids: &[u32]) -> Vec<AudioStream>
     streams
 }
 
-pub fn get_audio_state() -> Result<AudioState, String> {
-    check_wpctl_available()?;
+/// The column where a line's id field starts. wpctl right-aligns ids in a 4-wide
+/// field, so " 99." and "100." under the same parent start at the same column.
+fn id_field_start(line: &str) -> usize {
+    let pre = line.chars().take_while(|c| !c.is_ascii_digit()).count();
+    let digits = line
+        .chars()
+        .skip(pre)
+        .take_while(char::is_ascii_digit)
+        .count();
+    (pre + digits).saturating_sub(digits.max(4))
+}
 
-    let output = Command::new("wpctl")
-        .arg("status")
-        .output()
-        .map_err(|e| format!("Failed to run wpctl status: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "wpctl status failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = stdout.lines().collect();
-
+/// Walk `wpctl status` output for the Audio sinks, sources and streams.
+/// Volumes are left at 0.0 for `wpctl get-volume` to fill.
+fn parse_status(stdout: &str) -> AudioState {
     let mut sinks: Vec<AudioDevice> = Vec::new();
     let mut sources: Vec<AudioDevice> = Vec::new();
     let mut streams: Vec<AudioStream> = Vec::new();
@@ -348,8 +348,10 @@ pub fn get_audio_state() -> Result<AudioState, String> {
 
     let mut current_section = Section::None;
     let mut in_audio_section = false;
+    // wpctl nests each stream's ports one level deeper than the stream itself
+    let mut stream_indent: Option<usize> = None;
 
-    for line in lines {
+    for line in stdout.lines() {
         // Detect main sections
         if line.starts_with("Audio") {
             in_audio_section = true;
@@ -404,6 +406,10 @@ pub fn get_audio_state() -> Result<AudioState, String> {
                 }
             }
             Section::Streams => {
+                let indent = id_field_start(line);
+                if indent > *stream_indent.get_or_insert(indent) {
+                    continue;
+                }
                 if let Some(stream) = parse_stream_line(line) {
                     streams.push(stream);
                 }
@@ -411,6 +417,34 @@ pub fn get_audio_state() -> Result<AudioState, String> {
             Section::None => {}
         }
     }
+
+    AudioState {
+        sinks,
+        sources,
+        streams,
+    }
+}
+
+pub fn get_audio_state() -> Result<AudioState, String> {
+    check_wpctl_available()?;
+
+    let output = Command::new("wpctl")
+        .arg("status")
+        .output()
+        .map_err(|e| format!("Failed to run wpctl status: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "wpctl status failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let AudioState {
+        mut sinks,
+        mut sources,
+        mut streams,
+    } = parse_status(&String::from_utf8_lossy(&output.stdout));
 
     // Fetch actual volume for each device
     for sink in &mut sinks {
@@ -612,12 +646,18 @@ mod tests {
     }
 
     #[test]
-    fn a_stream_without_a_colon_splits_at_the_inline_volume_colon() {
-        // The colon in "[vol:" is taken as the app/media separator.
+    fn a_stream_without_a_colon_keeps_its_whole_name_before_the_inline_volume() {
         let s = stream(" │      71. Brave Browser [vol: 1.00 MUTED]");
-        assert_eq!(s.app_name, "Brave Browser [vol");
-        assert_eq!(s.media_name.as_deref(), Some("1.00 MUTED]"));
+        assert_eq!(s.app_name, "Brave Browser");
+        assert_eq!(s.media_name, None);
         assert!(!s.muted);
+    }
+
+    #[test]
+    fn a_media_name_may_contain_a_colon() {
+        let s = stream("     74. mpv: Artist - Song: Remix [vol: 0.80]");
+        assert_eq!(s.app_name, "mpv");
+        assert_eq!(s.media_name.as_deref(), Some("Artist - Song: Remix"));
     }
 
     #[test]
@@ -626,12 +666,73 @@ mod tests {
     }
 
     #[test]
-    fn a_stream_port_line_is_parsed_as_a_stream() {
-        // wpctl lists each stream's ports under it; the parser does not tell them apart.
-        let s = stream(" │           75. output_FL       > ALC1220 Analog:playback_FL\t[active]");
-        assert_eq!(s.id, 75);
-        assert_eq!(s.app_name, "output_FL       > ALC1220 Analog");
-        assert_eq!(s.media_name.as_deref(), Some("playback_FL"));
+    fn status_lists_streams_without_their_nested_ports() {
+        // Shape of real `wpctl status` output; ids are right-aligned in a 4-wide field.
+        let status = "\
+PipeWire 'pipewire-0' [1.6.11, user@host, cookie:1]
+ └─ Clients:
+        33. xdg-desktop-portal                  [1.6.11, user@host, pid:2060]
+
+Audio
+ ├─ Devices:
+ │      55. Built-in Audio                      [alsa]
+ │  
+ ├─ Sinks:
+ │  *   64. Built-in Audio Analog Stereo        [vol: 0.70]
+ │      66. USB Audio 2.0: Line Out             [vol: 0.40 MUTED]
+ │  
+ ├─ Sources:
+ │      65. Built-in Audio Analog Stereo        [vol: 0.31]
+ │  
+ ├─ Filters:
+ │  *   37. rnnoise_source                                               [Audio/Source]
+ │  
+ └─ Streams:
+       100. Brave Browser                                               
+            105. output_FR       > ALC1220 Analog:playback_FR\t[active]
+             89. output_FL       > ALC1220 Analog:playback_FL\t[active]
+        47. voice-recorder                                              
+             73. input_FL        < Noise Canceling source:capture_MONO\t[active]
+             74. input_FR       
+       103. game: Main Menu                                             
+             87. output_FL       > ALC1220 Analog:playback_FL\t[active]
+
+Video
+ └─ Streams:
+        80. webcam-viewer
+";
+        let state = parse_status(status);
+
+        let names = |ds: &[AudioDevice]| -> Vec<(u32, String, bool)> {
+            ds.iter()
+                .map(|d| (d.id, d.name.clone(), d.is_default))
+                .collect()
+        };
+        assert_eq!(
+            names(&state.sinks),
+            [
+                (64, "Built-in Audio Analog Stereo".into(), true),
+                (66, "USB Audio 2.0: Line Out".into(), false),
+            ]
+        );
+        assert_eq!(
+            names(&state.sources),
+            [(65, "Built-in Audio Analog Stereo".into(), false)]
+        );
+
+        let streams: Vec<(u32, &str, Option<&str>)> = state
+            .streams
+            .iter()
+            .map(|s| (s.id, s.app_name.as_str(), s.media_name.as_deref()))
+            .collect();
+        assert_eq!(
+            streams,
+            [
+                (100, "Brave Browser", None),
+                (47, "voice-recorder", None),
+                (103, "game", Some("Main Menu")),
+            ]
+        );
     }
 
     #[test]
