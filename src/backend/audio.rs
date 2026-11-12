@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
+use super::os::tool_exists;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AudioDevice {
     pub id: u32,
@@ -30,17 +32,11 @@ pub struct AudioState {
 
 /// Check if wpctl is available on the system
 fn check_wpctl_available() -> Result<(), String> {
-    Command::new("which")
-        .arg("wpctl")
-        .output()
-        .map_err(|e| format!("Failed to check for wpctl: {}", e))
-        .and_then(|output| {
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err("wpctl not found. Please install WirePlumber to manage audio.".to_string())
-            }
-        })
+    if tool_exists("wpctl") {
+        Ok(())
+    } else {
+        Err("wpctl not found. Please install WirePlumber to manage audio.".to_string())
+    }
 }
 
 /// Get volume for a specific node ID
@@ -85,17 +81,10 @@ fn parse_device_line(line: &str, device_type: &str) -> Option<AudioDevice> {
     // Get the rest after the dot
     let rest = content[dot_pos + 1..].trim();
 
-    // Extract volume if present (format: [vol: 0.30])
-    let (description, _inline_volume) = if let Some(vol_start) = rest.find("[vol:") {
-        let desc = rest[..vol_start].trim();
-        let vol_end = rest[vol_start..]
-            .find(']')
-            .unwrap_or(rest.len() - vol_start);
-        let vol_str = &rest[vol_start + 5..vol_start + vol_end];
-        let vol: f32 = vol_str.trim().parse().unwrap_or(0.0);
-        (desc, Some(vol))
-    } else {
-        (rest, None)
+    // Drop the inline volume if present (format: [vol: 0.30]); the real one is fetched later
+    let description = match rest.find("[vol:") {
+        Some(vol_start) => rest[..vol_start].trim(),
+        None => rest,
     };
 
     Some(AudioDevice {
@@ -538,9 +527,8 @@ pub fn set_mute(node_id: u32, muted: bool) -> Result<(), String> {
     }
 
     // If wpctl fails, try pactl (for sink-input streams)
-    let pactl_mute = if muted { "1" } else { "0" };
     let pactl_result = Command::new("pactl")
-        .args(["set-sink-input-mute", &node_id.to_string(), pactl_mute])
+        .args(["set-sink-input-mute", &node_id.to_string(), mute_val])
         .output();
 
     match pactl_result {
