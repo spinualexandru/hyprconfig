@@ -1,0 +1,74 @@
+/* Hyprconfig Theme - Matugen Template
+ * This template generates theme.css using matugen colors.
+ * Configure matugen to use this template by adding to ~/.config/matugen/config.toml:
+ *
+ * [templates.hyprconfig]
+ * input_path = "~/.config/matugen/templates/hyprconfig.css"
+ * output_path = "~/.config/hyprconfig/theme.css"
+ */
+
+<* if {{is_dark_mode}} *>
+.dark {
+<* else *>
+:root {
+<* endif *>
+  /* Sidebar */
+  --sidebar: {{colors.surface.default.hex}};
+  --sidebar-foreground: {{colors.on_surface.default.hex}};
+  --sidebar-primary: {{colors.primary.default.hex}};
+  --sidebar-primary-foreground: {{colors.on_primary.default.hex}};
+  --sidebar-accent: {{colors.secondary_container.default.hex}};
+  --sidebar-accent-foreground: {{colors.on_secondary_container.default.hex}};
+  --sidebar-border: {{colors.outline_variant.default.hex}};
+  --sidebar-ring: {{colors.primary.default.hex}};
+
+  /* Base colors */
+  --background: {{colors.surface.default.hex}};
+  --foreground: {{colors.on_surface.default.hex}};
+  --card: {{colors.surface_container.default.hex}};
+  --card-foreground: {{colors.on_surface.default.hex}};
+  --popover: {{colors.surface_container_high.default.hex}};
+  --popover-foreground: {{colors.on_surface.default.hex}};
+  --primary: {{colors.primary.default.hex}};
+  --primary-foreground: {{colors.on_primary.default.hex}};
+  --secondary: {{colors.secondary_container.default.hex}};
+  --secondary-foreground: {{colors.on_secondary_container.default.hex}};
+  --muted: {{colors.surface_variant.default.hex}};
+  --muted-foreground: {{colors.on_surface_variant.default.hex}};
+  --accent: {{colors.tertiary.default.hex}};
+  --accent-foreground: {{colors.on_tertiary.default.hex}};
+  --destructive: {{colors.error.default.hex}};
+  --destructive-foreground: {{colors.on_error.default.hex}};
+  --border: {{colors.outline_variant.default.hex}};
+  --input: {{colors.outline_variant.default.hex}};
+  --ring: {{colors.primary.default.hex}};
+
+  /* Tailwind @theme overrides */
+  --color-sidebar: {{colors.surface.default.hex}};
+  --color-sidebar-foreground: {{colors.on_surface.default.hex}};
+  --color-sidebar-primary: {{colors.primary.default.hex}};
+  --color-sidebar-primary-foreground: {{colors.on_primary.default.hex}};
+  --color-sidebar-accent: {{colors.secondary_container.default.hex}};
+  --color-sidebar-accent-foreground: {{colors.on_secondary_container.default.hex}};
+  --color-sidebar-border: {{colors.outline_variant.default.hex}};
+  --color-sidebar-ring: {{colors.primary.default.hex}};
+  --color-background: {{colors.surface.default.hex}};
+  --color-foreground: {{colors.on_surface.default.hex}};
+  --color-card: {{colors.surface_container.default.hex}};
+  --color-card-foreground: {{colors.on_surface.default.hex}};
+  --color-popover: {{colors.surface_container_high.default.hex}};
+  --color-popover-foreground: {{colors.on_surface.default.hex}};
+  --color-primary: {{colors.primary.default.hex}};
+  --color-primary-foreground: {{colors.on_primary.default.hex}};
+  --color-secondary: {{colors.secondary_container.default.hex}};
+  --color-secondary-foreground: {{colors.on_secondary_container.default.hex}};
+  --color-muted: {{colors.surface_variant.default.hex}};
+  --color-muted-foreground: {{colors.on_surface_variant.default.hex}};
+  --color-accent: {{colors.tertiary.default.hex}};
+  --color-accent-foreground: {{colors.on_tertiary.default.hex}};
+  --color-destructive: {{colors.error.default.hex}};
+  --color-destructive-foreground: {{colors.on_error.default.hex}};
+  --color-border: {{colors.outline_variant.default.hex}};
+  --color-input: {{colors.outline_variant.default.hex}};
+  --color-ring: {{colors.primary.default.hex}};
+}
