@@ -12,25 +12,9 @@ fn opening_a_rule_loads_its_details_once() {
             .open
             .contains(&"float-pavucontrol".to_owned())
     );
-    assert_eq!(
-        rt.state
-            .jobs
-            .skipped
-            .iter()
-            .filter(|j| **j == "rule-detail")
-            .count(),
-        1
-    );
+    assert_eq!(count(&rt, "rule-detail"), 1);
     // Closing and reopening a loading rule doesn't ask again.
     tap(&mut rt, "rule-float-pavucontrol/bar/head");
     tap(&mut rt, "rule-float-pavucontrol/bar/head");
-    assert_eq!(
-        rt.state
-            .jobs
-            .skipped
-            .iter()
-            .filter(|j| **j == "rule-detail")
-            .count(),
-        1
-    );
+    assert_eq!(count(&rt, "rule-detail"), 1);
 }
