@@ -1,6 +1,6 @@
 [package]
 name = "hyprconfig"
-version = "0.5.0"
+version = "0.6.0"
 description = "Configure Hyprland with a GUI"
 authors = ["Alex Spinu"]
 license = "MIT"
