@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use super::cache::cache_dir;
 use super::{installed, xdg_dir};
-use crate::backend::hyprpaper;
+use crate::backend::noctalia;
 use crate::ipc::Event;
 use crate::theme;
 
@@ -124,11 +124,11 @@ fn rewire(list: Vec<String>, ours: Option<String>) -> Vec<String> {
 /// Whether Noctalia is installed and answering: its `color-scheme-get` reply, or why not.
 pub(super) fn noctalia_running() -> Result<String, String> {
     installed("noctalia")?;
-    hyprpaper::noctalia_msg(&["color-scheme-get"]).map_err(|e| format!("isn't answering ({e})"))
+    noctalia::noctalia_msg(&["color-scheme-get"]).map_err(|e| format!("isn't answering ({e})"))
 }
 
 fn hook_list(key: &str) -> Result<Vec<String>, String> {
-    parse_list(&hyprpaper::noctalia_msg(&[
+    parse_list(&noctalia::noctalia_msg(&[
         "config-get",
         &format!("hooks.{key}"),
     ])?)
@@ -186,10 +186,10 @@ pub fn set_noctalia_integration(on: bool) -> Result<(), String> {
         let ours = event.filter(|_| on).map(|e| hook_command(&exe, e));
         let next = rewire(list.clone(), ours);
         if next != list {
-            hyprpaper::noctalia_msg(&["config-set", &format!("hooks.{key}"), &format_list(&next)])?;
+            noctalia::noctalia_msg(&["config-set", &format!("hooks.{key}"), &format_list(&next)])?;
         }
     }
-    hyprpaper::noctalia_msg(&["config-reload"])?;
+    noctalia::noctalia_msg(&["config-reload"])?;
     if !on {
         remove(&paths.template)?;
         remove(&paths.rendered)?;
@@ -231,7 +231,7 @@ pub fn noctalia_dark() -> Result<Option<bool>, String> {
         return Ok(None);
     }
     // Noctalia is running, so a refusal here is worth reporting.
-    match hyprpaper::noctalia_msg(&["theme-mode-get"])?.trim() {
+    match noctalia::noctalia_msg(&["theme-mode-get"])?.trim() {
         "dark" => Ok(Some(true)),
         "light" => Ok(Some(false)),
         other => Err(format!("unexpected theme mode \"{other}\"")),

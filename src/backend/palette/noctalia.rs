@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::integration::{noctalia_rendered, noctalia_running};
 use super::{Generator, Scheme, failure, to_css, xdg_dir};
-use crate::backend::hyprpaper;
+use crate::backend::{self, hyprpaper};
 use crate::theme;
 
 /// `noctalia msg color-scheme-get`: `<source> <name>`, the name possibly with spaces.
@@ -33,12 +33,12 @@ pub(super) fn noctalia() -> Result<String, String> {
 
 /// Runs Noctalia's own generator on its wallpaper, with its scheme.
 fn noctalia_wallpaper(scheme: &str) -> Result<String, String> {
-    let wallpaper = hyprpaper::noctalia_msg(&["wallpaper-get"])
+    let wallpaper = backend::noctalia::noctalia_msg(&["wallpaper-get"])
         .ok()
         .and_then(|w| hyprpaper::parse_noctalia_wallpaper_output(&w))
         .ok_or("has no wallpaper to generate from")?;
-    let pure_black = hyprpaper::noctalia_msg(&["config-get", "theme.pure_black_dark"])
-        .is_ok_and(|v| hyprpaper::toml_scalar(&v) == "true");
+    let pure_black = backend::noctalia::noctalia_msg(&["config-get", "theme.pure_black_dark"])
+        .is_ok_and(|v| backend::noctalia::toml_scalar(&v) == "true");
     let mut cmd = Command::new("noctalia");
     cmd.arg("theme")
         .arg(&wallpaper)
