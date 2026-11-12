@@ -1,7 +1,8 @@
 //! Text-level edits that keep the rest of the file intact, and the Hyprland reload after.
 
-use super::lexer::{TableEntry, is_lua_identifier, lua_table_fields};
+use super::expr::is_lua_identifier;
 use super::project::{LuaProject, LuaSource, LuaStatement, read_lua_config};
+use super::table::{TableEntry, lua_table_fields};
 use std::fs;
 use std::path::Path;
 #[cfg(not(test))]

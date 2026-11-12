@@ -1,11 +1,10 @@
 //! String variables: `local` and global assignments and module `return` tables.
 
 use super::discovery::display_source_file;
-use super::lexer::{
-    eval_lua_string_expr, find_assignment_eq, find_keyword_positions, find_matching_delimiter,
-    is_lua_identifier, is_lua_keyword, line_start_depths, lua_quote, table_entries,
-};
+use super::expr::{eval_lua_string_expr, is_lua_identifier, is_lua_keyword, lua_quote};
+use super::lexer::{find_keyword_positions, find_matching_delimiter, line_start_depths};
 use super::project::{LuaProject, LuaSource, LuaVariable, read_lua_project};
+use super::table::{find_assignment_eq, table_entries};
 use super::write::{Edit, append_lua_line, apply_edits, removal_range};
 use crate::backend::hyprland::Variable;
 use std::collections::{HashMap, HashSet};

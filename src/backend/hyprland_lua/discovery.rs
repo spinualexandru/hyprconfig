@@ -1,8 +1,8 @@
 //! Finding the files a config pulls in through `require`, `dofile` and `loadfile`.
 
+use super::expr::{eval_lua_string_expr, parse_lua_string_literal};
 use super::lexer::{
-    eval_lua_string_expr, find_keyword_positions, find_matching_delimiter,
-    parse_lua_string_literal, split_top_level_spans, string_literal_end,
+    find_keyword_positions, find_matching_delimiter, split_top_level_spans, string_literal_end,
 };
 use super::project::{read_lua_source, string_vars_map_for_sources};
 use std::fs;

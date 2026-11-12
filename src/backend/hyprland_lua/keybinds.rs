@@ -2,10 +2,9 @@
 
 use super::discovery::normalize_lua_path;
 use super::dispatchers::{dispatcher_to_lua_expr, parse_dispatcher_expr};
-use super::lexer::{
-    eval_lua_string_expr, is_lua_identifier, lua_quote, table_entries, table_field,
-};
+use super::expr::{eval_lua_string_expr, is_lua_identifier, lua_quote};
 use super::project::{LuaProject, LuaSource, LuaStatement, find_calls, read_lua_project};
+use super::table::{table_entries, table_field};
 use super::variables::assigned_identifiers;
 use super::write::{Edit, append_lua_line, apply_edits, delete_statement, table_insert_edit};
 use crate::backend::hyprland::Keybind;

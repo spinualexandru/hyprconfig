@@ -9,11 +9,13 @@ use std::path::PathBuf;
 mod discovery;
 mod dispatchers;
 mod env;
+mod expr;
 mod keybinds;
 mod lexer;
 mod monitors;
 mod project;
 mod rules;
+mod table;
 #[cfg(test)]
 mod tests;
 mod variables;

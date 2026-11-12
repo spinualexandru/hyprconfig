@@ -1,7 +1,7 @@
 //! `hl.env` environment variables.
 
 use super::discovery::display_source_file;
-use super::lexer::{eval_lua_string_expr, lua_quote};
+use super::expr::{eval_lua_string_expr, lua_quote};
 use super::project::{project_calls, read_lua_project};
 use super::write::{Edit, append_lua_line, apply_edits, delete_statement};
 use crate::backend::hyprland::EnvVar;

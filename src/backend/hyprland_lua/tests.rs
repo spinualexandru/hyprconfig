@@ -2,6 +2,7 @@
 
 use super::dispatchers::*;
 use super::env::*;
+use super::expr::*;
 use super::keybinds::*;
 use super::lexer::*;
 use super::monitors::*;

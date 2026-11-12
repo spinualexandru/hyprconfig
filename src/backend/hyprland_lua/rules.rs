@@ -1,10 +1,10 @@
 //! `hl.window_rule` and `hl.layer_rule`: listing, reading and deleting rules.
 
-use super::lexer::{
+use super::expr::{
     collapse_whitespace, eval_lua_string_expr, lua_value_to_display, parse_lua_string_literal,
-    parse_lua_table_fields, table_value,
 };
 use super::project::{LuaProject, LuaStatement, project_calls, read_lua_project};
+use super::table::{parse_lua_table_fields, table_value};
 use super::write::delete_statement;
 use crate::backend::hyprland::{Layerrule, LayerruleProperty, Windowrule, WindowruleProperty};
 use std::collections::HashMap;

@@ -1,7 +1,9 @@
 //! Translation between classic dispatcher names (what the UI edits) and `hl.dsp.*`
 //! expressions (what hyprland.lua contains).
 
+use super::expr::*;
 use super::lexer::*;
+use super::table::*;
 use crate::dispatchers::{RAW_LUA, is_name_char, resolve_command, variable_name};
 use std::collections::{HashMap, HashSet};
 

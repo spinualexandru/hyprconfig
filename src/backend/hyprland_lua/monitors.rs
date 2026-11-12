@@ -1,7 +1,8 @@
 //! `hl.monitor` rules: saving a layout and building the live `hyprctl eval` code.
 
-use super::lexer::{eval_lua_string_expr, lua_quote, lua_table_fields, table_entries};
+use super::expr::{eval_lua_string_expr, lua_quote};
 use super::project::{find_calls, read_lua_project};
+use super::table::{lua_table_fields, table_entries};
 use super::write::{Edit, append_lua_line, apply_edits, table_insert_edit};
 use std::path::Path;
 
